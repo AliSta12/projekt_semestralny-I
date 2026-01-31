@@ -1,5 +1,6 @@
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
+
 
 
 # ==================================================
@@ -70,6 +71,7 @@ class DNAApp(tk.Tk):
 
         self.sequences = {}
         self.current_fasta = None
+        self.motifs = []
 
         self.create_menu()
         self.create_layout()
@@ -116,6 +118,7 @@ class DNAApp(tk.Tk):
         tk.Button(side, text="Wczytaj plik", command=self.gui_load_file).pack(fill="x", pady=2)
         tk.Button(side, text="Pobierz z NCBI", command=self.download_ncbi).pack(fill="x", pady=2)
         tk.Button(side, text="Dodaj motyw", command=self.add_motif).pack(fill="x", pady=2)
+        tk.Button(side, text="Usuń zaznaczone motywy", command=self.remove_motif).pack(fill="x", pady=2)
         tk.Button(side, text="Uruchom analizę", command=self.run_analysis).pack(fill="x", pady=2)
         tk.Button(side, text="Eksportuj CSV/PDF", command=self.export_data).pack(fill="x", pady=2)
 
@@ -169,6 +172,9 @@ class DNAApp(tk.Tk):
         self.log_box = tk.Text(log_frame, height=6)
         self.log_box.pack(fill="x")
 
+        self.motif_listbox = tk.Listbox(self.tab_motifs)
+        self.motif_listbox.pack(fill="both", expand=True)
+
     # ================= LOG =================
 
     def log(self, msg):
@@ -216,7 +222,48 @@ class DNAApp(tk.Tk):
             messagebox.showerror("Błąd FASTA", str(e))
 
     def add_motif(self):
-        self.log("Dodaj motyw (placeholder)")
+        text = simpledialog.askstring(
+            "Dodaj motywy",
+            "Podaj motyw lub kilka motywów.\n"
+            "Jeśli kilka – oddziel przecinkami.\n\n"
+            "Przykład:\nATG, CGT, AAA"
+        )
+
+        if not text:
+            return
+
+        motifs = [m.strip().upper() for m in text.split(",") if m.strip()]
+
+        for motif in motifs:
+            if any(c not in "ACGT" for c in motif):
+                messagebox.showerror(
+                    "Błąd",
+                    f"Niepoprawny motyw: {motif}\nDozwolone tylko A C G T"
+                )
+                continue
+
+            if motif not in self.motifs:
+                self.motifs.append(motif)
+                self.motif_listbox.insert("end", motif)
+                self.log(f"Dodano motyw: {motif}")
+
+        self.tabs.select(self.tab_motifs)
+
+    def remove_motif(self):
+        selected = self.motif_listbox.curselection()
+
+        if not selected:
+            messagebox.showinfo(
+                "Usuń motyw",
+                "Zaznacz motyw lub kilka motywów na liście."
+            )
+            return
+
+        for i in reversed(selected):
+            motif = self.motif_listbox.get(i)
+            self.motif_listbox.delete(i)
+            self.motifs.remove(motif)
+            self.log(f"Usunięto motyw: {motif}")
 
     def run_analysis(self):
         if not self.sequences:
