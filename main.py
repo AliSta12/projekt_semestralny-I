@@ -144,26 +144,29 @@ class DNAApp(tk.Tk):
         self.preview_box = tk.Text(self.tab_preview)
         self.preview_box.pack(fill="both", expand=True)
 
-        # Placeholder reszta
+        # Placeholder tylko dla viz i export
         for tab in [
-            self.tab_motifs,
             self.tab_viz,
             self.tab_export,
         ]:
             tk.Label(tab, text="(puste – do implementacji)").pack(pady=20)
 
-            self.results_table = ttk.Treeview(
-                self.tab_results,
-                columns=("seq", "motif", "count"),
-                show="headings"
-            )
+        self.motif_listbox = tk.Listbox(self.tab_motifs)
+        self.motif_listbox.pack(fill="both", expand=True)
 
-            self.results_table.heading("seq", text="Sekwencja")
-            self.results_table.heading("motif", text="Motyw")
-            self.results_table.heading("count", text="Liczba")
+        # TABELA WYNIKÓW – TYLKO RAZ
+        self.results_table = ttk.Treeview(
+            self.tab_results,
+            columns=("seq", "motif", "count"),
+            show="headings"
+        )
 
-            self.results_table.pack(fill="both", expand=True)
+        self.results_table.heading("seq", text="Sekwencja")
+        self.results_table.heading("motif", text="Motyw")
+        self.results_table.heading("count", text="Liczba")
 
+        self.results_table.pack(fill="both", expand=True)
+        # LOGI
         log_frame = tk.Frame(self)
         log_frame.pack(fill="x")
 
@@ -171,11 +174,6 @@ class DNAApp(tk.Tk):
 
         self.log_box = tk.Text(log_frame, height=6)
         self.log_box.pack(fill="x")
-
-        self.motif_listbox = tk.Listbox(self.tab_motifs)
-        self.motif_listbox.pack(fill="both", expand=True)
-
-    # ================= LOG =================
 
     def log(self, msg):
         self.log_box.insert("end", msg + "\n")
@@ -274,9 +272,11 @@ class DNAApp(tk.Tk):
             messagebox.showwarning("Brak motywów", "Dodaj przynajmniej jeden motyw")
             return
 
+        # WYCZYŚĆ STARE WYNIKI
         for row in self.results_table.get_children():
             self.results_table.delete(row)
 
+        # LICZENIE
         for seq_id, seq in self.sequences.items():
             for motif in self.motifs:
                 c = count_motif(seq, motif)
