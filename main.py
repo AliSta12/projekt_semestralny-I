@@ -264,6 +264,8 @@ class DNAApp(tk.Tk):
             filetypes=[("FASTA", "*.fasta *.fa *.fna"), ("All", "*.*")]
         )
 
+
+
         if not path:
             return
 
