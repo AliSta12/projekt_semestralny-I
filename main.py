@@ -1,6 +1,8 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 import csv
+import os
+
 
 
 
@@ -184,12 +186,17 @@ class DNAApp(tk.Tk):
 
         self.viz_inner.bind("<Configure>", _on_configure)
 
+        # === Widok plików CSV ===
+        tk.Label(self.tab_export, text="Pliki wynikowe CSV:").pack(anchor="w")
 
-        # Placeholder tylko dla export
-        for tab in [
+        self.export_listbox = tk.Listbox(self.tab_export)
+        self.export_listbox.pack(fill="both", expand=True)
+
+        tk.Button(
             self.tab_export,
-        ]:
-            tk.Label(tab, text="(puste – do implementacji)").pack(pady=20)
+            text="Odśwież listę",
+            command=self.refresh_csv_files
+        ).pack(pady=5)
 
         self.motif_listbox = tk.Listbox(self.tab_motifs)
         self.motif_listbox.pack(fill="both", expand=True)
@@ -236,6 +243,18 @@ class DNAApp(tk.Tk):
     def log(self, msg):
         self.log_box.insert("end", msg + "\n")
         self.log_box.see("end")
+
+    def refresh_csv_files(self):
+        self.export_listbox.delete(0, "end")
+
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+
+        for f in os.listdir(project_dir):
+            if f.lower().endswith(".csv"):
+                self.export_listbox.insert("end", f)
+
+        if self.export_listbox.size() == 0:
+            self.export_listbox.insert("end", "(brak plików CSV)")
 
     # ================= GUI CALLBACKS =================
 
