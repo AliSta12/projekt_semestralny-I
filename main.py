@@ -56,6 +56,32 @@ def count_motif(sequence, motif):
         start = pos + 1  # pozwala na overlapping
 
     return count
+#szukanie pozycji motywów
+def find_motif_positions(sequence, motif):
+    positions = []
+    start = 0
+
+    while True:
+        pos = sequence.find(motif, start)
+        if pos == -1:
+            break
+
+        positions.append(pos)
+        start = pos + 1
+
+    return positions
+
+#znajdowanie motywów
+def find_motif_positions(sequence, motif):
+    positions = []
+    start = 0
+    while True:
+        pos = sequence.find(motif, start)
+        if pos == -1:
+            break
+        positions.append(pos)
+        start = pos + 1
+    return positions
 
 
 
@@ -144,6 +170,30 @@ class DNAApp(tk.Tk):
         # Podgląd FASTA
         self.preview_box = tk.Text(self.tab_preview)
         self.preview_box.pack(fill="both", expand=True)
+
+        # === Wizualizacja (Canvas + Scrollbar) ===
+        self.viz_frame = tk.Frame(self.tab_viz)
+        self.viz_frame.pack(fill="both", expand=True)
+
+        self.viz_canvas = tk.Canvas(self.viz_frame, bg="white")
+        self.viz_canvas.pack(side="left", fill="both", expand=True)
+
+        self.viz_scroll = ttk.Scrollbar(
+            self.viz_frame,
+            orient="vertical",
+            command=self.viz_canvas.yview
+        )
+        self.viz_scroll.pack(side="right", fill="y")
+
+        self.viz_canvas.configure(yscrollcommand=self.viz_scroll.set)
+
+        self.viz_inner = tk.Frame(self.viz_canvas)
+        self.viz_canvas.create_window((0, 0), window=self.viz_inner, anchor="nw")
+
+        def _on_configure(event):
+            self.viz_canvas.configure(scrollregion=self.viz_canvas.bbox("all"))
+
+        self.viz_inner.bind("<Configure>", _on_configure)
 
         # Placeholder tylko dla viz i export
         for tab in [
@@ -273,11 +323,9 @@ class DNAApp(tk.Tk):
             messagebox.showwarning("Brak motywów", "Dodaj przynajmniej jeden motyw")
             return
 
-        # WYCZYŚĆ STARE WYNIKI
         for row in self.results_table.get_children():
             self.results_table.delete(row)
 
-        # LICZENIE
         for seq_id, seq in self.sequences.items():
             for motif in self.motifs:
                 c = count_motif(seq, motif)
@@ -290,12 +338,89 @@ class DNAApp(tk.Tk):
 
         self.log("Analiza zakończona")
         self.tabs.select(self.tab_results)
+        self.draw_visualization()
+
+    def draw_visualization(self):
+        for w in self.viz_inner.winfo_children():
+            w.destroy()
+
+        if not self.sequences or not self.motifs:
+            return
+
+        left = 120
+        width = 700
+        line_h = 40
+
+        palette = ["#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#a65628"]
+        motif_colors = {m: palette[i % len(palette)] for i, m in enumerate(self.motifs)}
+
+        legend = tk.Frame(self.viz_inner)
+        legend.pack(anchor="w", pady=5)
+
+        for m, c in motif_colors.items():
+            tk.Label(legend, text=m, fg=c).pack(side="left", padx=10)
+
+        for row, (seq_id, seq) in enumerate(self.sequences.items()):
+            canvas = tk.Canvas(
+                self.viz_inner,
+                width=left + width + 20,
+                height=line_h,
+                bg="white",
+                highlightthickness=0
+            )
+            canvas.pack(anchor="w")
+
+            canvas.create_text(10, line_h // 2, anchor="w", text=seq_id)
+            canvas.create_line(left, line_h // 2, left + width, line_h // 2, width=2)
+
+            L = len(seq)
+            if L == 0:
+                continue
+
+            for motif in self.motifs:
+                color = motif_colors[motif]
+                positions = find_motif_positions(seq, motif)
+
+                for p in positions:
+                    x = left + (p / L) * width
+                    canvas.create_line(
+                        x,
+                        line_h // 2 - 8,
+                        x,
+                        line_h // 2 + 8,
+                        fill=color,
+                        width=3
+                    )
 
     def download_ncbi(self):
         self.log("NCBI (placeholder)")
 
     def export_data(self):
-        self.log("Eksport (placeholder)")
+        if not self.results_table.get_children():
+            messagebox.showinfo("Eksport", "Brak wyników do eksportu.")
+            return
+
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV", "*.csv")],
+            title="Zapisz wyniki jako CSV"
+        )
+
+        if not path:
+            return
+
+        try:
+            with open(path, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["Sekwencja", "Motyw", "Liczba"])
+
+                for row in self.results_table.get_children():
+                    writer.writerow(self.results_table.item(row)["values"])
+
+            self.log(f"Wyeksportowano wyniki do: {path}")
+
+        except Exception as e:
+            messagebox.showerror("Błąd eksportu", str(e))
 
     def about(self):
         messagebox.showinfo("O programie", "Analiza motywów DNA\nSzkielet projektu")
