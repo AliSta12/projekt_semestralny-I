@@ -71,17 +71,6 @@ def find_motif_positions(sequence, motif):
 
     return positions
 
-#znajdowanie motywów
-def find_motif_positions(sequence, motif):
-    positions = []
-    start = 0
-    while True:
-        pos = sequence.find(motif, start)
-        if pos == -1:
-            break
-        positions.append(pos)
-        start = pos + 1
-    return positions
 
 
 
@@ -195,9 +184,9 @@ class DNAApp(tk.Tk):
 
         self.viz_inner.bind("<Configure>", _on_configure)
 
-        # Placeholder tylko dla viz i export
+
+        # Placeholder tylko dla export
         for tab in [
-            self.tab_viz,
             self.tab_export,
         ]:
             tk.Label(tab, text="(puste – do implementacji)").pack(pady=20)
@@ -216,7 +205,25 @@ class DNAApp(tk.Tk):
         self.results_table.heading("motif", text="Motyw")
         self.results_table.heading("count", text="Liczba")
 
+        # kontener na wyniki
+        results_frame = tk.Frame(self.tab_results)
+        results_frame.pack(fill="both", expand=True)
+
+        # tabela szczegółowa (góra)
+        self.results_table = ttk.Treeview(
+            results_frame,
+            columns=("seq", "motif", "count"),
+            show="headings"
+        )
+        self.results_table.heading("seq", text="Sekwencja")
+        self.results_table.heading("motif", text="Motyw")
+        self.results_table.heading("count", text="Liczba")
         self.results_table.pack(fill="both", expand=True)
+
+        # tabela agregacji (dół)
+        self.summary_table = ttk.Treeview(results_frame, show="headings")
+        self.summary_table.pack(fill="x")
+
         # LOGI
         log_frame = tk.Frame(self)
         log_frame.pack(fill="x")
@@ -339,6 +346,7 @@ class DNAApp(tk.Tk):
         self.log("Analiza zakończona")
         self.tabs.select(self.tab_results)
         self.draw_visualization()
+        self.build_summary()
 
     def draw_visualization(self):
         for w in self.viz_inner.winfo_children():
@@ -383,7 +391,7 @@ class DNAApp(tk.Tk):
 
                 for p in positions:
                     x = left + (p / L) * width
-                    canvas.create_line(
+                    line_id = canvas.create_line(
                         x,
                         line_h // 2 - 8,
                         x,
@@ -391,6 +399,42 @@ class DNAApp(tk.Tk):
                         fill=color,
                         width=3
                     )
+
+                    def make_handler(seq_id=seq_id, motif=motif, pos=p):
+                        return lambda e: messagebox.showinfo(
+                            "Motyw",
+                            f"Sekwencja: {seq_id}\nMotyw: {motif}\nPozycja: {pos}"
+                        )
+
+                    canvas.tag_bind(line_id, "<Button-1>", make_handler())
+
+    def build_summary(self):
+        for c in self.summary_table.get_children():
+            self.summary_table.delete(c)
+
+        cols = ["Sekwencja"] + self.motifs + ["SUMA"]
+        self.summary_table["columns"] = cols
+
+        for c in cols:
+            self.summary_table.heading(c, text=c)
+            self.summary_table.column(c, width=80)
+
+        for seq_id in self.sequences:
+            row = [seq_id]
+            total = 0
+
+            for motif in self.motifs:
+                s = 0
+                for item in self.results_table.get_children():
+                    v = self.results_table.item(item)["values"]
+                    if v[0] == seq_id and v[1] == motif:
+                        s += v[2]
+
+                row.append(s)
+                total += s
+
+            row.append(total)
+            self.summary_table.insert("", "end", values=row)
 
     def download_ncbi(self):
         self.log("NCBI (placeholder)")
