@@ -10,21 +10,55 @@ def load_fasta(path):
     sequences = {}
     current_id = None
 
-    with open(path) as f:
-        for line in f:
+    with open(path, "r") as f:
+        for line_num, line in enumerate(f, start=1):
             line = line.strip()
 
+            if not line:
+                continue
+
             if line.startswith(">"):
-                current_id = line[1:]
+                current_id = line[1:].strip()
+
+                if not current_id:
+                    raise ValueError(f"Pusty nagłówek w linii {line_num}")
+
+                if current_id in sequences:
+                    raise ValueError(f"Duplikat ID: {current_id}")
+
                 sequences[current_id] = ""
             else:
-                sequences[current_id] += line
+                if current_id is None:
+                    raise ValueError("Plik nie zaczyna się od nagłówka FASTA")
+
+                if any(c not in "ACGTacgt" for c in line):
+                    raise ValueError(f"Niepoprawne znaki w linii {line_num}")
+
+                sequences[current_id] += line.upper()
+
+    if not sequences:
+        raise ValueError("Nie znaleziono sekwencji")
 
     return sequences
+#funkcja licząca motywy
+def count_motif(sequence, motif):
+    count = 0
+    start = 0
+
+    while True:
+        pos = sequence.find(motif, start)
+        if pos == -1:
+            break
+
+        count += 1
+        start = pos + 1  # pozwala na overlapping
+
+    return count
+
 
 
 # ==================================================
-# GUI 
+# GUI
 # ==================================================
 
 class DNAApp(tk.Tk):
@@ -110,11 +144,22 @@ class DNAApp(tk.Tk):
         # Placeholder reszta
         for tab in [
             self.tab_motifs,
-            self.tab_results,
             self.tab_viz,
             self.tab_export,
         ]:
             tk.Label(tab, text="(puste – do implementacji)").pack(pady=20)
+
+            self.results_table = ttk.Treeview(
+                self.tab_results,
+                columns=("seq", "motif", "count"),
+                show="headings"
+            )
+
+            self.results_table.heading("seq", text="Sekwencja")
+            self.results_table.heading("motif", text="Motyw")
+            self.results_table.heading("count", text="Liczba")
+
+            self.results_table.pack(fill="both", expand=True)
 
         log_frame = tk.Frame(self)
         log_frame.pack(fill="x")
@@ -142,27 +187,61 @@ class DNAApp(tk.Tk):
             return
 
         try:
+            self.sequences.clear()
+            self.preview_box.delete("1.0", "end")
+
             self.sequences = load_fasta(path)
             self.current_fasta = path
 
-            self.preview_box.delete("1.0", "end")
+            total_len = sum(len(v) for v in self.sequences.values())
 
-            for k, v in self.sequences.items():
-                self.preview_box.insert("end", f">{k}\n{v}\n\n")
+            for i, (k, v) in enumerate(self.sequences.items()):
+                if i == 20:
+                    self.preview_box.insert("end", "\n... (reszta ukryta)\n")
+                    break
 
-            self.log(f"Plik wczytany: {path}")
-            self.log(f"Liczba sekwencji: {len(self.sequences)}")
+                self.preview_box.insert("end", f">{k}\n")
+                self.preview_box.insert(
+                    "end",
+                    v[:200] + ("..." if len(v) > 200 else "") + "\n\n"
+                )
+
+            self.log(f"Wczytano plik: {path}")
+            self.log(f"Sekwencje: {len(self.sequences)}")
+            self.log(f"Łączna długość: {total_len}")
 
             self.tabs.select(self.tab_preview)
 
         except Exception as e:
-            messagebox.showerror("Błąd", str(e))
+            messagebox.showerror("Błąd FASTA", str(e))
 
     def add_motif(self):
         self.log("Dodaj motyw (placeholder)")
 
     def run_analysis(self):
-        self.log("Analiza (placeholder)")
+        if not self.sequences:
+            messagebox.showwarning("Brak danych", "Najpierw wczytaj FASTA")
+            return
+
+        if not self.motifs:
+            messagebox.showwarning("Brak motywów", "Dodaj przynajmniej jeden motyw")
+            return
+
+        for row in self.results_table.get_children():
+            self.results_table.delete(row)
+
+        for seq_id, seq in self.sequences.items():
+            for motif in self.motifs:
+                c = count_motif(seq, motif)
+
+                self.results_table.insert(
+                    "",
+                    "end",
+                    values=(seq_id, motif, c)
+                )
+
+        self.log("Analiza zakończona")
+        self.tabs.select(self.tab_results)
 
     def download_ncbi(self):
         self.log("NCBI (placeholder)")
