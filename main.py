@@ -493,13 +493,14 @@ class DNAApp(tk.Tk):
         searched_listbox.pack(fill="both", expand=True, padx=10, pady=(0, 8))
 
         # ===== Akordeon =====
-        tk.Label(win, text="Wybierz z listy motywów:", anchor="w").pack(fill="x", padx=10, pady=(4, 6))
+        tk.Label(win, text="Wybierz z listy motywów:", anchor="w").pack(
+            fill="x", padx=10, pady=(4, 6)
+        )
 
         # kontener akordeonu
         accordion_container = tk.Frame(win)
         accordion_container.pack(fill="x", padx=10, pady=(0, 6))
 
-        # — SEKCJE MOTYWÓW —
         EU_MOTIFS = [
             ("ATG", "start kodon"),
             ("TAA", "stop kodon"),
@@ -535,26 +536,31 @@ class DNAApp(tk.Tk):
         }
         checkbox_vars = {}
 
-        # — FUNKCJA toggle_section —
         def toggle_section(name):
-            # chowamy wszystkie sekcje i resetujemy ikonki
+            # jeśli ta sekcja już jest widoczna → chowaj
+            if accordion_frames[name].winfo_ismapped():
+                accordion_frames[name].pack_forget()
+                icons[name].set(f"▸  {name}")
+
+                win.update_idletasks()
+                h = win.winfo_reqheight()
+                win.geometry(f"{initial_width}x{h}")
+                return
+
+            # chowamy wszystkie i reset ikon
             for nm, frame in accordion_frames.items():
                 frame.pack_forget()
                 icons[nm].set(f"▸  {nm}")
 
-            # pokazujemy wybraną sekcję
-            frame = accordion_frames[name]
-            frame.pack(fill="x", padx=20, pady=(2, 6))
-
-            # zmieniamy ikonę tylko tej sekcji
+            # pokaz sekcję
+            accordion_frames[name].pack(fill="x", padx=20, pady=(2, 6))
             icons[name].set(f"▾  {name}")
 
-            # dopasuj wysokość okna
             win.update_idletasks()
-            new_h = win.winfo_reqheight()
-            win.geometry(f"{initial_width}x{new_h}")
+            h = win.winfo_reqheight()
+            win.geometry(f"{initial_width}x{h}")
 
-        # === Eukariota ===
+        # — Eukariota — #
         btn_euk = tk.Button(
             accordion_container,
             textvariable=icons["Eukariota"],
@@ -581,9 +587,12 @@ class DNAApp(tk.Tk):
                         searched_listbox.insert("end", s)
                 else:
                     if s in self.motifs:
-                        idx = self.motifs.index(s)
                         self.motifs.remove(s)
-                        self.motif_listbox.delete(idx)
+                        try:
+                            idx_main = self.motifs.index(s)
+                            self.motif_listbox.delete(idx_main)
+                        except ValueError:
+                            pass
                     items = list(searched_listbox.get(0, "end"))
                     if s in items:
                         searched_listbox.delete(items.index(s))
@@ -597,7 +606,10 @@ class DNAApp(tk.Tk):
             cb.pack(anchor="w")
             checkbox_vars["Eukariota"].append((var, seq))
 
-        # === Prokariota ===
+        # chowamy na start
+        frm_euk.pack_forget()
+
+        # — Prokariota — #
         btn_pro = tk.Button(
             accordion_container,
             textvariable=icons["Prokariota"],
@@ -624,9 +636,12 @@ class DNAApp(tk.Tk):
                         searched_listbox.insert("end", s)
                 else:
                     if s in self.motifs:
-                        idx = self.motifs.index(s)
                         self.motifs.remove(s)
-                        self.motif_listbox.delete(idx)
+                        try:
+                            idx_main = self.motifs.index(s)
+                            self.motif_listbox.delete(idx_main)
+                        except ValueError:
+                            pass
                     items = list(searched_listbox.get(0, "end"))
                     if s in items:
                         searched_listbox.delete(items.index(s))
@@ -640,6 +655,7 @@ class DNAApp(tk.Tk):
             cb.pack(anchor="w")
             checkbox_vars["Prokariota"].append((var, seq))
 
+        frm_pro.pack_forget()
 
     def run_analysis(self):
         """Uruchamia analizę motywów dla wszystkich sekwencji"""
