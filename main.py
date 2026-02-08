@@ -1,16 +1,40 @@
+"""
+Projekt 1 – Analiza motywów sekwencyjnych DNA
+
+Opis:
+Program umożliwia wczytanie sekwencji DNA w formacie FASTA,
+dodawanie motywów nukleotydowych, analizę ich liczby oraz pozycji,
+a także wizualizację wyników i eksport do plików CSV.
+
+Architektura programu:
+1. LOGIKA
+   - funkcje niezależne od GUI (FASTA, motywy)
+2. GUI
+   - interfejs użytkownika (Tkinter)
+   - obsługa zdarzeń
+   - wizualizacja i eksport
+"""
+
+# ==================================================
+# IMPORTY
+# ==================================================
+
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 import csv
 import os
 
 
-
-
 # ==================================================
-# LOGIKA (funkcje)
+# LOGIKA – PRZETWARZANIE SEKWENCJI DNA
 # ==================================================
 
 def load_fasta(path):
+    """
+    Wczytuje plik FASTA i zwraca słownik:
+    {ID_sekwencji : sekwencja_DNA}
+    """
+
     sequences = {}
     current_id = None
 
@@ -18,9 +42,11 @@ def load_fasta(path):
         for line_num, line in enumerate(f, start=1):
             line = line.strip()
 
+            # pomijamy puste linie
             if not line:
                 continue
 
+            # nagłówek FASTA
             if line.startswith(">"):
                 current_id = line[1:].strip()
 
@@ -31,6 +57,8 @@ def load_fasta(path):
                     raise ValueError(f"Duplikat ID: {current_id}")
 
                 sequences[current_id] = ""
+
+            # linia sekwencji
             else:
                 if current_id is None:
                     raise ValueError("Plik nie zaczyna się od nagłówka FASTA")
@@ -44,22 +72,14 @@ def load_fasta(path):
         raise ValueError("Nie znaleziono sekwencji")
 
     return sequences
-#funkcja licząca motywy
-def count_motif(sequence, motif):
-    count = 0
-    start = 0
 
-    while True:
-        pos = sequence.find(motif, start)
-        if pos == -1:
-            break
 
-        count += 1
-        start = pos + 1  # pozwala na overlapping
-
-    return count
-#szukanie pozycji motywów
 def find_motif_positions(sequence, motif):
+    """
+    Zwraca listę pozycji (indeksów),
+    w których dany motyw występuje w sekwencji
+    """
+
     positions = []
     start = 0
 
@@ -74,29 +94,110 @@ def find_motif_positions(sequence, motif):
     return positions
 
 
+def count_motif(sequence, motif):
+    """
+    Liczy liczbę wystąpień motywu w sekwencji
+    (z uwzględnieniem nachodzących na siebie motywów)
+    """
+
+    count = 0
+    start = 0
+
+    while True:
+        pos = sequence.find(motif, start)
+        if pos == -1:
+            break
+
+        count += 1
+        start = pos + 1
+
+    return count
+# ==================================================
+# IUPAC – MAPA KODÓW I FUNKCJE DOPASOWANIA
+# ==================================================
+
+IUPAC_MAP = {
+    "A": {"A"}, "C": {"C"}, "G": {"G"}, "T": {"T"},
+    "R": {"A", "G"}, "Y": {"C", "T"},
+    "S": {"G", "C"}, "W": {"A", "T"},
+    "K": {"G", "T"}, "M": {"A", "C"},
+    "B": {"C", "G", "T"}, "D": {"A", "G", "T"},
+    "H": {"A", "C", "T"}, "V": {"A", "C", "G"},
+    "N": {"A", "C", "G", "T"},
+}
+
+def matches_iupac(seq_char: str, motif_char: str) -> bool:
+    """
+    Sprawdza, czy nukleotyd seq_char pasuje
+    do symbolu IUPAC motif_char.
+    """
+    seq_char = seq_char.upper()
+    motif_char = motif_char.upper()
+    return seq_char in IUPAC_MAP.get(motif_char, set())
+
+
+def iupac_find_positions(sequence: str, motif: str) -> list[int]:
+    """
+    Znajduje pozycje motywu z IUPAC w sekwencji.
+    Zwraca listę pozycji (0-based).
+    """
+    positions = []
+    L = len(sequence)
+    mL = len(motif)
+
+    for i in range(L - mL + 1):
+        match = True
+        for j in range(mL):
+            if not matches_iupac(sequence[i + j], motif[j]):
+                match = False
+                break
+        if match:
+            positions.append(i)
+
+    return positions
+
+
+def iupac_count(sequence: str, motif: str) -> int:
+    """
+    Liczy liczbę dopasowań motywu IUPAC w sekwencji,
+    z allow overlapping.
+    """
+    return len(iupac_find_positions(sequence, motif))
+
 
 
 # ==================================================
-# GUI
+# GUI – APLIKACJA TKINTER
 # ==================================================
 
 class DNAApp(tk.Tk):
+
+    # ==================================================
+    # INICJALIZACJA APLIKACJI
+    # ==================================================
+
     def __init__(self):
         super().__init__()
 
         self.title("Projekt 1: Analiza motywów sekwencyjnych w DNA")
         self.geometry("1000x600")
 
+        # dane aplikacji
         self.sequences = {}
         self.current_fasta = None
         self.motifs = []
 
+        # budowa interfejsu
         self.create_menu()
         self.create_layout()
 
-    # ================= MENU =================
+    # ==================================================
+    # MENU GÓRNE
+    # ==================================================
 
     def create_menu(self):
+        """Tworzy menu główne aplikacji"""
+
         menubar = tk.Menu(self)
 
         plik = tk.Menu(menubar, tearoff=0)
@@ -105,7 +206,7 @@ class DNAApp(tk.Tk):
         plik.add_command(label="Wyjście", command=self.quit)
 
         motywy = tk.Menu(menubar, tearoff=0)
-        motywy.add_command(label="Dodaj motyw", command=self.add_motif)
+        motywy.add_command(label="Dodaj / usuń motywy", command=self.open_motif_manager)
 
         ncbi = tk.Menu(menubar, tearoff=0)
         ncbi.add_command(label="Pobierz z NCBI", command=self.download_ncbi)
@@ -124,28 +225,42 @@ class DNAApp(tk.Tk):
 
         self.config(menu=menubar)
 
-    # ================= LAYOUT =================
+    # ==================================================
+    # UKŁAD OKNA I WIDŻETY
+    # ==================================================
 
     def create_layout(self):
+        """
+        Buduje cały interfejs graficzny:
+        panele, zakładki, tabele, wizualizację i logi
+        """
+
+        # --- główny kontener ---
         main_frame = tk.Frame(self)
         main_frame.pack(fill="both", expand=True)
 
+        # --- panel boczny ---
         side = tk.Frame(main_frame, width=200)
         side.pack(side="left", fill="y")
 
         tk.Button(side, text="Wczytaj plik", command=self.gui_load_file).pack(fill="x", pady=2)
         tk.Button(side, text="Pobierz z NCBI", command=self.download_ncbi).pack(fill="x", pady=2)
-        tk.Button(side, text="Dodaj motyw", command=self.add_motif).pack(fill="x", pady=2)
-        tk.Button(side, text="Usuń zaznaczone motywy", command=self.remove_motif).pack(fill="x", pady=2)
+        tk.Button(
+            side,
+            text="Dodaj / usuń motywy",
+            command=self.open_motif_manager
+        ).pack(fill="x", pady=2)
         tk.Button(side, text="Uruchom analizę", command=self.run_analysis).pack(fill="x", pady=2)
         tk.Button(side, text="Eksportuj CSV/PDF", command=self.export_data).pack(fill="x", pady=2)
 
+        # --- część prawa ---
         right = tk.Frame(main_frame)
         right.pack(side="right", fill="both", expand=True)
 
         self.tabs = ttk.Notebook(right)
         self.tabs.pack(fill="both", expand=True)
 
+        # zakładki
         self.tab_preview = ttk.Frame(self.tabs)
         self.tab_motifs = ttk.Frame(self.tabs)
         self.tab_results = ttk.Frame(self.tabs)
@@ -153,16 +268,38 @@ class DNAApp(tk.Tk):
         self.tab_export = ttk.Frame(self.tabs)
 
         self.tabs.add(self.tab_preview, text="Podgląd sekwencji")
-        self.tabs.add(self.tab_motifs, text="Wybór motywów")
+        self.tabs.add(self.tab_motifs, text="Szukane motywy")
         self.tabs.add(self.tab_results, text="Wyniki analizy")
         self.tabs.add(self.tab_viz, text="Wizualizacja")
         self.tabs.add(self.tab_export, text="Eksport")
 
-        # Podgląd FASTA
+        # --- podgląd FASTA ---
         self.preview_box = tk.Text(self.tab_preview)
         self.preview_box.pack(fill="both", expand=True)
 
-        # === Wizualizacja (Canvas + Scrollbar) ===
+        # --- lista motywów ---
+        self.motif_listbox = tk.Listbox(self.tab_motifs)
+        self.motif_listbox.pack(fill="both", expand=True)
+
+        # --- tabela wyników ---
+        results_frame = tk.Frame(self.tab_results)
+        results_frame.pack(fill="both", expand=True)
+
+        self.results_table = ttk.Treeview(
+            results_frame,
+            columns=("seq", "motif", "count"),
+            show="headings"
+        )
+        self.results_table.heading("seq", text="Sekwencja")
+        self.results_table.heading("motif", text="Motyw")
+        self.results_table.heading("count", text="Liczba")
+        self.results_table.pack(fill="both", expand=True)
+
+        # --- tabela podsumowań ---
+        self.summary_table = ttk.Treeview(results_frame, show="headings")
+        self.summary_table.pack(fill="x")
+
+        # --- wizualizacja ---
         self.viz_frame = tk.Frame(self.tab_viz)
         self.viz_frame.pack(fill="both", expand=True)
 
@@ -181,14 +318,15 @@ class DNAApp(tk.Tk):
         self.viz_inner = tk.Frame(self.viz_canvas)
         self.viz_canvas.create_window((0, 0), window=self.viz_inner, anchor="nw")
 
-        def _on_configure(event):
-            self.viz_canvas.configure(scrollregion=self.viz_canvas.bbox("all"))
+        self.viz_inner.bind(
+            "<Configure>",
+            lambda e: self.viz_canvas.configure(
+                scrollregion=self.viz_canvas.bbox("all")
+            )
+        )
 
-        self.viz_inner.bind("<Configure>", _on_configure)
-
-        # === Widok plików CSV ===
+        # --- eksport ---
         tk.Label(self.tab_export, text="Pliki wynikowe CSV:").pack(anchor="w")
-
         self.export_listbox = tk.Listbox(self.tab_export)
         self.export_listbox.pack(fill="both", expand=True)
 
@@ -198,55 +336,27 @@ class DNAApp(tk.Tk):
             command=self.refresh_csv_files
         ).pack(pady=5)
 
-        self.motif_listbox = tk.Listbox(self.tab_motifs)
-        self.motif_listbox.pack(fill="both", expand=True)
-
-        # TABELA WYNIKÓW – TYLKO RAZ
-        self.results_table = ttk.Treeview(
-            self.tab_results,
-            columns=("seq", "motif", "count"),
-            show="headings"
-        )
-
-        self.results_table.heading("seq", text="Sekwencja")
-        self.results_table.heading("motif", text="Motyw")
-        self.results_table.heading("count", text="Liczba")
-
-        # kontener na wyniki
-        results_frame = tk.Frame(self.tab_results)
-        results_frame.pack(fill="both", expand=True)
-
-        # tabela szczegółowa (góra)
-        self.results_table = ttk.Treeview(
-            results_frame,
-            columns=("seq", "motif", "count"),
-            show="headings"
-        )
-        self.results_table.heading("seq", text="Sekwencja")
-        self.results_table.heading("motif", text="Motyw")
-        self.results_table.heading("count", text="Liczba")
-        self.results_table.pack(fill="both", expand=True)
-
-        # tabela agregacji (dół)
-        self.summary_table = ttk.Treeview(results_frame, show="headings")
-        self.summary_table.pack(fill="x")
-
-        # LOGI
+        # --- logi ---
         log_frame = tk.Frame(self)
         log_frame.pack(fill="x")
 
         tk.Label(log_frame, text="Logi / komunikaty:").pack(anchor="w")
-
         self.log_box = tk.Text(log_frame, height=6)
         self.log_box.pack(fill="x")
 
+    # ==================================================
+    # FUNKCJE POMOCNICZE
+    # ==================================================
+
     def log(self, msg):
+        """Dodaje komunikat do pola logów"""
         self.log_box.insert("end", msg + "\n")
         self.log_box.see("end")
 
     def refresh_csv_files(self):
-        self.export_listbox.delete(0, "end")
+        """Odświeża listę plików CSV w zakładce Eksport"""
 
+        self.export_listbox.delete(0, "end")
         project_dir = os.path.dirname(os.path.abspath(__file__))
 
         for f in os.listdir(project_dir):
@@ -256,9 +366,13 @@ class DNAApp(tk.Tk):
         if self.export_listbox.size() == 0:
             self.export_listbox.insert("end", "(brak plików CSV)")
 
-    # ================= GUI CALLBACKS =================
+    # ==================================================
+    # AKCJE UŻYTKOWNIKA
+    # ==================================================
 
     def gui_load_file(self):
+        """Wczytuje plik FASTA wybrany przez użytkownika"""
+
         path = filedialog.askopenfilename(
             title="Wybierz FASTA",
             filetypes=[("FASTA", "*.fasta *.fa *.fna"), ("All", "*.*")]
@@ -274,79 +388,114 @@ class DNAApp(tk.Tk):
             self.sequences = load_fasta(path)
             self.current_fasta = path
 
-            total_len = sum(len(v) for v in self.sequences.values())
-
             for i, (k, v) in enumerate(self.sequences.items()):
                 if i == 20:
                     self.preview_box.insert("end", "\n... (reszta ukryta)\n")
                     break
 
-                self.preview_box.insert("end", f">{k}\n")
-                self.preview_box.insert(
-                    "end",
-                    v[:200] + ("..." if len(v) > 200 else "") + "\n\n"
-                )
+                self.preview_box.insert("end", f">{k}\n{v[:200]}...\n\n")
 
             self.log(f"Wczytano plik: {path}")
-            self.log(f"Sekwencje: {len(self.sequences)}")
-            self.log(f"Łączna długość: {total_len}")
-
-            self.tabs.select(self.tab_preview)
 
         except Exception as e:
             messagebox.showerror("Błąd FASTA", str(e))
 
-    def add_motif(self):
-        text = simpledialog.askstring(
-            "Dodaj motywy",
-            "Podaj motyw lub kilka motywów.\n"
-            "Jeśli kilka – oddziel przecinkami.\n\n"
-            "Przykład:\nATG, CGT, AAA"
-        )
+    def open_motif_manager(self):
+        """
+        Otwiera okno do zarządzania motywami:
+        - dodawanie przez Enter
+        - usuwanie wielu zaznaczonych
+        """
 
-        if not text:
-            return
+        win = tk.Toplevel(self)
+        win.title("Zarządzanie motywami DNA")
+        win.geometry("300x400")
+        win.transient(self)
+        win.grab_set()
 
-        motifs = [m.strip().upper() for m in text.split(",") if m.strip()]
+        # ===== LEGENDA (dokładnie wg Twojego opisu) =====
+        tk.Label(win, text="Dozwolone symbole:").pack(pady=(6, 0))
 
-        for motif in motifs:
+        tk.Label(win, text="A C G T").pack()
+
+        tk.Label(
+            win,
+            text="R Y S W K M B D H V N (IUPAC)"
+        ).pack(pady=(0, 8))
+
+        motif_entry = tk.Entry(win)
+        motif_entry.pack(fill="x", padx=10)
+
+        # Bind na Enter — dodawanie motywu
+        def on_enter(event):
+            motif = motif_entry.get().strip().upper()
+            if not motif:
+                return
+
+            # sprawdzanie poprawności znaków
             if any(c not in "ACGT" for c in motif):
                 messagebox.showerror(
                     "Błąd",
-                    f"Niepoprawny motyw: {motif}\nDozwolone tylko A C G T"
+                    "Motyw może zawierać tylko znaki A, C, G, T"
                 )
-                continue
+                return
 
-            if motif not in self.motifs:
-                self.motifs.append(motif)
-                self.motif_listbox.insert("end", motif)
-                self.log(f"Dodano motyw: {motif}")
+            # sprawdzanie duplikatów
+            if motif in self.motifs:
+                messagebox.showinfo(
+                    "Informacja",
+                    "Taki motyw już istnieje"
+                )
+                return
 
-        self.tabs.select(self.tab_motifs)
+            # dodawanie do list
+            self.motifs.append(motif)
+            self.motif_listbox.insert("end", motif)
+            motif_listbox.insert("end", motif)
 
-    def remove_motif(self):
-        selected = self.motif_listbox.curselection()
+            motif_entry.delete(0, "end")
+            self.log(f"Dodano motyw: {motif}")
 
-        if not selected:
-            messagebox.showinfo(
-                "Usuń motyw",
-                "Zaznacz motyw lub kilka motywów na liście."
-            )
-            return
+        motif_entry.bind("<Return>", on_enter)
 
-        for i in reversed(selected):
-            motif = self.motif_listbox.get(i)
-            self.motif_listbox.delete(i)
-            self.motifs.remove(motif)
-            self.log(f"Usunięto motyw: {motif}")
+        # === Lista motywów z możliwością wielokrotnego wyboru ===
+        tk.Label(win, text="Aktualne motywy:").pack(pady=(10, 2))
+
+        motif_listbox = tk.Listbox(win, selectmode="extended")
+        motif_listbox.pack(fill="both", expand=True, padx=10)
+
+        # wypełnij listę aktualnymi motywami
+        for m in self.motifs:
+            motif_listbox.insert("end", m)
+
+        # === Usuwanie zaznaczonych ===
+        def remove_motifs_local():
+            sel = list(motif_listbox.curselection())
+            if not sel:
+                return
+
+            # usuwamy od największego indeksu, żeby nie mieszać kolejności
+            for i in sorted(sel, reverse=True):
+                motif = motif_listbox.get(i)
+                motif_listbox.delete(i)
+                self.motif_listbox.delete(i)
+                self.motifs.remove(motif)
+                self.log(f"Usunięto motyw: {motif}")
+
+        tk.Button(
+            win,
+            text="Usuń zaznaczone",
+            command=remove_motifs_local
+        ).pack(pady=10)
+
+        # ustaw fokus na Entry
+        motif_entry.focus_set()
 
     def run_analysis(self):
-        if not self.sequences:
-            messagebox.showwarning("Brak danych", "Najpierw wczytaj FASTA")
-            return
+        """Uruchamia analizę motywów dla wszystkich sekwencji"""
 
-        if not self.motifs:
-            messagebox.showwarning("Brak motywów", "Dodaj przynajmniej jeden motyw")
+        if not self.sequences or not self.motifs:
+            messagebox.showwarning("Błąd", "Wczytaj FASTA i dodaj motywy")
             return
 
         for row in self.results_table.get_children():
@@ -354,20 +503,20 @@ class DNAApp(tk.Tk):
 
         for seq_id, seq in self.sequences.items():
             for motif in self.motifs:
-                c = count_motif(seq, motif)
-
-                self.results_table.insert(
-                    "",
-                    "end",
-                    values=(seq_id, motif, c)
-                )
+                c = iupac_count(seq, motif)
+                self.results_table.insert("", "end", values=(seq_id, motif, c))
 
         self.log("Analiza zakończona")
-        self.tabs.select(self.tab_results)
         self.draw_visualization()
         self.build_summary()
 
+    # ==================================================
+    # WIZUALIZACJA I PODSUMOWANIA
+    # ==================================================
+
     def draw_visualization(self):
+        """Rysuje mapę wystąpień motywów na sekwencjach DNA"""
+
         for w in self.viz_inner.winfo_children():
             w.destroy()
 
@@ -406,7 +555,7 @@ class DNAApp(tk.Tk):
 
             for motif in self.motifs:
                 color = motif_colors[motif]
-                positions = find_motif_positions(seq, motif)
+                positions = iupac_find_positions(seq, motif)
 
                 for p in positions:
                     x = left + (p / L) * width
@@ -419,15 +568,19 @@ class DNAApp(tk.Tk):
                         width=3
                     )
 
-                    def make_handler(seq_id=seq_id, motif=motif, pos=p):
-                        return lambda e: messagebox.showinfo(
+                    canvas.tag_bind(
+                        line_id,
+                        "<Button-1>",
+                        lambda e, s=seq_id, m=motif, pos=p:
+                        messagebox.showinfo(
                             "Motyw",
-                            f"Sekwencja: {seq_id}\nMotyw: {motif}\nPozycja: {pos}"
+                            f"Sekwencja: {s}\nMotyw: {m}\nPozycja: {pos}"
                         )
-
-                    canvas.tag_bind(line_id, "<Button-1>", make_handler())
+                    )
 
     def build_summary(self):
+        """Buduje tabelę podsumowań liczby motywów"""
+
         for c in self.summary_table.get_children():
             self.summary_table.delete(c)
 
@@ -455,40 +608,48 @@ class DNAApp(tk.Tk):
             row.append(total)
             self.summary_table.insert("", "end", values=row)
 
-    def download_ncbi(self):
-        self.log("NCBI (placeholder)")
+    # ==================================================
+    # EKSPORT I INFORMACJE
+    # ==================================================
 
     def export_data(self):
+        """Eksportuje wyniki analizy do pliku CSV"""
+
         if not self.results_table.get_children():
             messagebox.showinfo("Eksport", "Brak wyników do eksportu.")
             return
 
         path = filedialog.asksaveasfilename(
             defaultextension=".csv",
-            filetypes=[("CSV", "*.csv")],
-            title="Zapisz wyniki jako CSV"
+            filetypes=[("CSV", "*.csv")]
         )
 
         if not path:
             return
 
-        try:
-            with open(path, "w", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow(["Sekwencja", "Motyw", "Liczba"])
+        with open(path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Sekwencja", "Motyw", "Liczba"])
 
-                for row in self.results_table.get_children():
-                    writer.writerow(self.results_table.item(row)["values"])
+            for row in self.results_table.get_children():
+                writer.writerow(self.results_table.item(row)["values"])
 
-            self.log(f"Wyeksportowano wyniki do: {path}")
+        self.log(f"Wyeksportowano wyniki do: {path}")
 
-        except Exception as e:
-            messagebox.showerror("Błąd eksportu", str(e))
+    def download_ncbi(self):
+        """Placeholder – pobieranie danych z NCBI"""
+        self.log("NCBI (placeholder)")
 
     def about(self):
-        messagebox.showinfo("O programie", "Analiza motywów DNA\nSzkielet projektu")
+        """Informacje o programie"""
+        messagebox.showinfo(
+            "O programie",
+            "Analiza motywów DNA\nProjekt zaliczeniowy"
+        )
 
 
+# ==================================================
+# URUCHOMIENIE PROGRAMU
 # ==================================================
 
 if __name__ == "__main__":
