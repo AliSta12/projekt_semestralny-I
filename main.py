@@ -402,24 +402,26 @@ class DNAApp(tk.Tk):
 
     def open_motif_manager(self):
         """
-        Otwiera okno do zarządzania motywami:
-        - dodawanie przez Enter
-        - usuwanie wielu zaznaczonych
-        - wybór predefiniowanych motywów
+        Okno do zarządzania motywami:
+        - wpisywanie własnego
+        - lista szukanych
+        - akordeon z predefiniowanymi
         """
 
         win = tk.Toplevel(self)
         win.title("Dodaj/usuń motywy")
-        win.update_idletasks()
-        win.minsize(350, 300)
+        # Ustal stałą szerokość, dynamiczną wysokość
+        initial_width = 380
+
+        win.geometry(f"{initial_width}x500")
+        win.resizable(False, True)
         win.transient(self)
         win.grab_set()
 
         # ===== LEGENDA =====
         tk.Label(win, text="Dozwolone symbole:").pack(pady=(6, 0))
-        tk.Label(win, text="A C G T").pack()
+        tk.Label(win, text="A  C  G  T").pack()
 
-        # IUPAC tooltip
         iupac_label = tk.Label(win, text="R Y S W K M B D H V N (IUPAC)", fg="blue")
         iupac_label.pack(pady=(0, 8))
 
@@ -430,77 +432,68 @@ class DNAApp(tk.Tk):
             "W = A lub T\n"
             "K = G lub T\n"
             "M = A lub C\n"
-            "B = C lub G lub T\n"
-            "D = A lub G lub T\n"
-            "H = A lub C lub T\n"
-            "V = A lub C lub G\n"
+            "B = C G T\n"
+            "D = A G T\n"
+            "H = A C T\n"
+            "V = A C G\n"
             "N = dowolna baza"
         )
+
         tooltip = None
 
-        def on_enter_label(e):
+        def show_tooltip(e):
             nonlocal tooltip
-            if tooltip:
-                return
-            x = e.x_root + 10
-            y = e.y_root + 10
+            if tooltip: return
+            x, y = e.x_root + 10, e.y_root + 10
             tooltip = tk.Toplevel(win)
             tooltip.wm_overrideredirect(True)
             tooltip.geometry(f"+{x}+{y}")
             tk.Label(
-                tooltip,
-                text=tooltip_text,
-                justify="left",
-                bg="#ffffe0",
-                relief="solid",
-                borderwidth=1,
-                padx=4,
-                pady=2
+                tooltip, text=tooltip_text,
+                justify="left", bg="#ffffe0",
+                relief="solid", borderwidth=1,
+                padx=4, pady=2
             ).pack()
 
-        def on_leave_label(e):
+        def hide_tooltip(e):
             nonlocal tooltip
             if tooltip:
                 tooltip.destroy()
                 tooltip = None
 
-        iupac_label.bind("<Enter>", on_enter_label)
-        iupac_label.bind("<Leave>", on_leave_label)
+        iupac_label.bind("<Enter>", show_tooltip)
+        iupac_label.bind("<Leave>", hide_tooltip)
 
-        # ===== Pole wpisywania własnych =====
-        # Etykieta nad polem wpisywania z wyrównaniem do lewej
+        # ===== Własny motyw =====
         tk.Label(win, text="Wpisz swój motyw:", anchor="w").pack(fill="x", padx=10)
-
-        # Pole do wpisania własnego motywu
         motif_entry = tk.Entry(win)
-        motif_entry.pack(fill="x", padx=10, pady=(2, 6))
-
         motif_entry.pack(fill="x", padx=10, pady=(2, 6))
 
         def add_manual(event):
             m = motif_entry.get().strip().upper()
             if not m:
                 return
-
             if any(c not in IUPAC_MAP for c in m):
                 messagebox.showerror("Błąd", "Motyw może zawierać tylko symbole ACGT lub IUPAC")
                 return
-
             if m in self.motifs:
                 messagebox.showinfo("Info", "Taki motyw już istnieje")
                 return
-
             self.motifs.append(m)
             self.motif_listbox.insert("end", m)
-            motif_listbox.insert("end", m)
+            searched_listbox.insert("end", m)
             motif_entry.delete(0, "end")
             self.log(f"Dodano motyw: {m}")
 
         motif_entry.bind("<Return>", add_manual)
 
-        # =========================
-        # — teraz deklarujemy listy *
-        # =========================
+        # ===== Szukane motywy =====
+        tk.Label(win, text="Szukane motywy:", anchor="w").pack(fill="x", padx=10)
+        searched_listbox = tk.Listbox(win, selectmode="extended")
+        searched_listbox.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+
+        # ===== Akordeon =====
+        tk.Label(win, text="Wybierz z listy motywów:", anchor="w").pack(fill="x", padx=10, pady=(4, 6))
 
         EU_MOTIFS = [
             ("ATG", "start kodon"),
@@ -530,157 +523,107 @@ class DNAApp(tk.Tk):
             ("AATGAG", "trp operator"),
         ]
 
-        # — kontener akordeonu —
-        accordion_container = tk.Frame(win)
-        accordion_container.pack(fill="x", padx=10, pady=(8, 10))
-
-        tk.Label(accordion_container, text="Wybierz z listy motywów:").pack(anchor="w")
-
-        # — zmienne ikon do nagłówków —
-        euk_icon = tk.StringVar(value="▸")
-        pro_icon = tk.StringVar(value="▸")
-
         accordion_frames = {}
-        icons = {"Eukariota": euk_icon, "Prokariota": pro_icon}
+        icons = {
+            "Eukariota": tk.StringVar(value="▸"),
+            "Prokariota": tk.StringVar(value="▸")
+        }
         checkbox_vars = {}
 
-        # — Eukariota —
+        def toggle_section(name):
+            # jeśli ta sama sekcja już otwarta → chowamy
+            if accordion_frames[name].winfo_ismapped():
+                accordion_frames[name].pack_forget()
+                icons[name].set("▸")
+
+                win.update_idletasks()
+                current_h = win.winfo_height()
+                win.geometry(f"{initial_width}x{current_h}")
+                return
+
+            # chowamy wszystkie sekcje
+            for nm, frame in accordion_frames.items():
+                frame.pack_forget()
+                icons[nm].set("▸")
+
+            # rozwijamy tylko wybraną
+            accordion_frames[name].pack(fill="x", padx=20, pady=(2, 6))
+            icons[name].set("▾")
+
+            win.update_idletasks()
+            current_h = win.winfo_height()
+            win.geometry(f"{initial_width}x{current_h}")
+
+        # === Eukariota ===
         btn_euk = tk.Button(
-            accordion_container,
-            textvariable=euk_icon,
-            anchor="w",
-            fg="#0b5394",
+            win,
+            textvariable=icons["Eukariota"],
+            anchor="w", fg="#0b5394",
             font=("Arial", 10, "bold")
         )
-        btn_euk.pack(fill="x", pady=(4, 0))
-
-        tk.Label(
-            accordion_container,
-            text="Eukariota",
-            fg="#0b5394",
-            font=("Arial", 10, "bold"),
-            anchor="w"
-        ).pack(fill="x", padx=(20, 0))
-
-        frm_euk = tk.Frame(accordion_container)
+        btn_euk.pack(fill="x", padx=10)
+        frm_euk = tk.Frame(win)
         accordion_frames["Eukariota"] = frm_euk
         checkbox_vars["Eukariota"] = []
 
         for seq, desc in EU_MOTIFS:
-            var = tk.BooleanVar(master=win)
-            if seq in self.motifs:
-                var.set(True)
-
+            var = tk.BooleanVar(master=win, value=(seq in self.motifs))
             def on_check(v=var, s=seq):
                 if v.get():
                     if s not in self.motifs:
                         self.motifs.append(s)
                         self.motif_listbox.insert("end", s)
-                        motif_listbox.insert("end", s)
+                        searched_listbox.insert("end", s)
                 else:
                     if s in self.motifs:
                         idx = self.motifs.index(s)
                         self.motifs.remove(s)
                         self.motif_listbox.delete(idx)
-                    items = list(motif_listbox.get(0, "end"))
+                    items = list(searched_listbox.get(0, "end"))
                     if s in items:
-                        motif_listbox.delete(items.index(s))
-
+                        searched_listbox.delete(items.index(s))
             cb = tk.Checkbutton(frm_euk, text=f"{seq} — {desc}", variable=var, command=on_check)
             cb.pack(anchor="w")
             checkbox_vars["Eukariota"].append((var, seq))
 
-        # — Prokariota —
+        btn_euk.config(command=lambda: toggle_section("Eukariota"))
+
+        # === Prokariota ===
         btn_pro = tk.Button(
-            accordion_container,
-            textvariable=pro_icon,
-            anchor="w",
-            fg="#0b5394",
+            win,
+            textvariable=icons["Prokariota"],
+            anchor="w", fg="#0b5394",
             font=("Arial", 10, "bold")
         )
-        btn_pro.pack(fill="x", pady=(4, 0))
-
-        tk.Label(
-            accordion_container,
-            text="Prokariota",
-            fg="#0b5394",
-            font=("Arial", 10, "bold"),
-            anchor="w"
-        ).pack(fill="x", padx=(20, 0))
-
-        frm_pro = tk.Frame(accordion_container)
+        btn_pro.pack(fill="x", padx=10, pady=(4, 0))
+        frm_pro = tk.Frame(win)
         accordion_frames["Prokariota"] = frm_pro
         checkbox_vars["Prokariota"] = []
 
         for seq, desc in PRO_MOTIFS:
-            var = tk.BooleanVar(master=win)
-            if seq in self.motifs:
-                var.set(True)
-
+            var = tk.BooleanVar(master=win, value=(seq in self.motifs))
             def on_check_p(v=var, s=seq):
                 if v.get():
                     if s not in self.motifs:
                         self.motifs.append(s)
                         self.motif_listbox.insert("end", s)
-                        motif_listbox.insert("end", s)
+                        searched_listbox.insert("end", s)
                 else:
                     if s in self.motifs:
                         idx = self.motifs.index(s)
                         self.motifs.remove(s)
                         self.motif_listbox.delete(idx)
-                    items = list(motif_listbox.get(0, "end"))
+                    items = list(searched_listbox.get(0, "end"))
                     if s in items:
-                        motif_listbox.delete(items.index(s))
-
+                        searched_listbox.delete(items.index(s))
             cb = tk.Checkbutton(frm_pro, text=f"{seq} — {desc}", variable=var, command=on_check_p)
             cb.pack(anchor="w")
             checkbox_vars["Prokariota"].append((var, seq))
 
-        # — Funkcja przełączania akordeonu —
-        def toggle_section(name):
-            for nm, frame in accordion_frames.items():
-                if frame.winfo_ismapped():
-                    frame.pack_forget()
-                    icons[nm].set("▸")
-                else:
-                    # chowamy inne
-                    frame.pack_forget()
-                    icons[nm].set("▸")
-            # pokazujemy wybraną
-            accordion_frames[name].pack(fill="x", padx=10, pady=(2, 6))
-            icons[name].set("▾")
-
-        btn_euk.config(command=lambda: toggle_section("Eukariota"))
         btn_pro.config(command=lambda: toggle_section("Prokariota"))
-        # === Szukane motywy ===
-        tk.Label(win, text="Szukane motywy:").pack(pady=(6, 0), anchor="w", padx=10)
-        searched_listbox = tk.Listbox(win, selectmode="extended")
-        searched_listbox.pack(fill="both", expand=True, padx=10)
-
-        # — Usuwanie z listy
-        def remove_motifs_local():
-            sel = searched_listbox.curselection()
-            if not sel:
-                return
-            for i in sorted(sel, reverse=True):
-                motif = searched_listbox.get(i)
-                searched_listbox.delete(i)
-
-                # usuń również z głównej listy i widgetu
-                if motif in self.motifs:
-                    idx_main = self.motifs.index(motif)
-                    self.motifs.remove(motif)
-                    self.motif_listbox.delete(idx_main)
-
-                # odznacz checkboxy w akordeonie
-                for section_vars in checkbox_vars.values():
-                    for var, seq in section_vars:
-                        if seq == motif:
-                            var.set(False)
-
-        tk.Button(win, text="Usuń z szukanych", command=remove_motifs_local).pack(pady=8)
 
         motif_entry.focus_set()
+
 
     def run_analysis(self):
         """Uruchamia analizę motywów dla wszystkich sekwencji"""
