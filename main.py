@@ -536,55 +536,61 @@ class DNAApp(tk.Tk):
 
         tk.Label(accordion_container, text="Wybierz z listy motywów:").pack(anchor="w")
 
+        # — zmienne ikon do nagłówków —
+        euk_icon = tk.StringVar(value="▸")
+        pro_icon = tk.StringVar(value="▸")
+
         accordion_frames = {}
+        icons = {"Eukariota": euk_icon, "Prokariota": pro_icon}
         checkbox_vars = {}
 
-        def toggle_section(name):
-            for frame in accordion_frames.values():
-                frame.pack_forget()
-            accordion_frames[name].pack(fill="x", padx=10, pady=(2, 6))
-
         # — Eukariota —
-        # początkowy symbol zwiniętej sekcji
-        euk_icon = tk.StringVar(value="▸")
-
         btn_euk = tk.Button(
             accordion_container,
             textvariable=euk_icon,
             anchor="w",
-            fg="#0b5394",  # ciemny niebieski
+            fg="#0b5394",
             font=("Arial", 10, "bold")
         )
         btn_euk.pack(fill="x", pady=(4, 0))
 
-        # tekst ramki obok strzałki
-        btn_euk_label = tk.Label(
+        tk.Label(
             accordion_container,
             text="Eukariota",
             fg="#0b5394",
             font=("Arial", 10, "bold"),
             anchor="w"
-        )
-        btn_euk_label.pack(fill="x", padx=(20, 0))
+        ).pack(fill="x", padx=(20, 0))
 
-        def toggle_euk():
-            # chowamy inne i pokazujemy tę
-            for name, frame in accordion_frames.items():
-                frame.pack_forget()
-                # reset ikon
-                if name == "Eukariota":
-                    euk_icon.set("▾")
+        frm_euk = tk.Frame(accordion_container)
+        accordion_frames["Eukariota"] = frm_euk
+        checkbox_vars["Eukariota"] = []
+
+        for seq, desc in EU_MOTIFS:
+            var = tk.BooleanVar(master=win)
+            if seq in self.motifs:
+                var.set(True)
+
+            def on_check(v=var, s=seq):
+                if v.get():
+                    if s not in self.motifs:
+                        self.motifs.append(s)
+                        self.motif_listbox.insert("end", s)
+                        motif_listbox.insert("end", s)
                 else:
-                    icons[name].set("▸")
+                    if s in self.motifs:
+                        idx = self.motifs.index(s)
+                        self.motifs.remove(s)
+                        self.motif_listbox.delete(idx)
+                    items = list(motif_listbox.get(0, "end"))
+                    if s in items:
+                        motif_listbox.delete(items.index(s))
 
-            frm_euk.pack(fill="x", padx=10, pady=(2, 6))
-
-        btn_euk.config(command=toggle_euk)
-        btn_euk_label.bind("<Button-1>", lambda e: toggle_euk())
+            cb = tk.Checkbutton(frm_euk, text=f"{seq} — {desc}", variable=var, command=on_check)
+            cb.pack(anchor="w")
+            checkbox_vars["Eukariota"].append((var, seq))
 
         # — Prokariota —
-        pro_icon = tk.StringVar(value="▸")
-
         btn_pro = tk.Button(
             accordion_container,
             textvariable=pro_icon,
@@ -594,61 +600,83 @@ class DNAApp(tk.Tk):
         )
         btn_pro.pack(fill="x", pady=(4, 0))
 
-        btn_pro_label = tk.Label(
+        tk.Label(
             accordion_container,
             text="Prokariota",
             fg="#0b5394",
             font=("Arial", 10, "bold"),
             anchor="w"
-        )
-        btn_pro_label.pack(fill="x", padx=(20, 0))
+        ).pack(fill="x", padx=(20, 0))
 
-        def toggle_pro():
-            for name, frame in accordion_frames.items():
-                frame.pack_forget()
-                if name == "Prokariota":
-                    pro_icon.set("▾")
+        frm_pro = tk.Frame(accordion_container)
+        accordion_frames["Prokariota"] = frm_pro
+        checkbox_vars["Prokariota"] = []
+
+        for seq, desc in PRO_MOTIFS:
+            var = tk.BooleanVar(master=win)
+            if seq in self.motifs:
+                var.set(True)
+
+            def on_check_p(v=var, s=seq):
+                if v.get():
+                    if s not in self.motifs:
+                        self.motifs.append(s)
+                        self.motif_listbox.insert("end", s)
+                        motif_listbox.insert("end", s)
                 else:
-                    icons[name].set("▸")
+                    if s in self.motifs:
+                        idx = self.motifs.index(s)
+                        self.motifs.remove(s)
+                        self.motif_listbox.delete(idx)
+                    items = list(motif_listbox.get(0, "end"))
+                    if s in items:
+                        motif_listbox.delete(items.index(s))
 
-            frm_pro.pack(fill="x", padx=10, pady=(2, 6))
+            cb = tk.Checkbutton(frm_pro, text=f"{seq} — {desc}", variable=var, command=on_check_p)
+            cb.pack(anchor="w")
+            checkbox_vars["Prokariota"].append((var, seq))
 
-        btn_pro.config(command=toggle_pro)
-        btn_pro_label.bind("<Button-1>", lambda e: toggle_pro())
+        # — Funkcja przełączania akordeonu —
+        def toggle_section(name):
+            for nm, frame in accordion_frames.items():
+                if frame.winfo_ismapped():
+                    frame.pack_forget()
+                    icons[nm].set("▸")
+                else:
+                    # chowamy inne
+                    frame.pack_forget()
+                    icons[nm].set("▸")
+            # pokazujemy wybraną
+            accordion_frames[name].pack(fill="x", padx=10, pady=(2, 6))
+            icons[name].set("▾")
 
-        # ===== Lista aktualnych motywów =====
+        btn_euk.config(command=lambda: toggle_section("Eukariota"))
+        btn_pro.config(command=lambda: toggle_section("Prokariota"))
+        # === Szukane motywy ===
         tk.Label(win, text="Szukane motywy:").pack(pady=(6, 0), anchor="w", padx=10)
-        motif_listbox = tk.Listbox(win, selectmode="extended")
-        motif_listbox.pack(fill="both", expand=True, padx=10)
+        searched_listbox = tk.Listbox(win, selectmode="extended")
+        searched_listbox.pack(fill="both", expand=True, padx=10)
 
-        # — Usuwanie — (lista zaznaczonych w oknie)
+        # — Usuwanie z listy
         def remove_motifs_local():
-            sel = motif_listbox.curselection()
+            sel = searched_listbox.curselection()
             if not sel:
                 return
-
             for i in sorted(sel, reverse=True):
-                motif = motif_listbox.get(i)
+                motif = searched_listbox.get(i)
+                searched_listbox.delete(i)
 
-                # usuń z lokalnej listy
-                motif_listbox.delete(i)
-
-                # usuń z głównej listy
-                try:
+                # usuń również z głównej listy i widgetu
+                if motif in self.motifs:
                     idx_main = self.motifs.index(motif)
                     self.motifs.remove(motif)
                     self.motif_listbox.delete(idx_main)
-                except ValueError:
-                    pass
 
-                # odznacz checkboxy we wszystkich sekcjach
-                # (checkbox_vars to słownik przechowujący var, seq)
+                # odznacz checkboxy w akordeonie
                 for section_vars in checkbox_vars.values():
                     for var, seq in section_vars:
                         if seq == motif:
-                            var.set(False)  # odznacz checkbox
-
-                self.log(f"Usunięto motyw: {motif}")
+                            var.set(False)
 
         tk.Button(win, text="Usuń z szukanych", command=remove_motifs_local).pack(pady=8)
 
@@ -672,6 +700,9 @@ class DNAApp(tk.Tk):
         self.log("Analiza zakończona")
         self.draw_visualization()
         self.build_summary()
+
+
+
 
     # ==================================================
     # WIZUALIZACJA I PODSUMOWANIA
