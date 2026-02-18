@@ -194,6 +194,7 @@ class DNAApp(tk.Tk):
         self.create_layout()
         if self.DEV_MODE:
             self.load_test_data()
+        self.sort_state = {}  # zapamiętuje kierunek sortowania kolumn
 
     # ==================================================
     # MENU GÓRNE
@@ -294,6 +295,16 @@ class DNAApp(tk.Tk):
             show="headings"
         )
         self.results_table.pack(fill="both", expand=True)
+
+        # zmiana kursora na rączkę przy najechaniu na nagłówki
+        def on_heading_enter(event):
+            region = self.results_table.identify_region(event.x, event.y)
+            if region == "heading":
+                self.results_table.config(cursor="hand2")
+            else:
+                self.results_table.config(cursor="")
+
+        self.results_table.bind("<Motion>", on_heading_enter)
 
         # --- wizualizacja ---
         self.viz_frame = tk.Frame(self.tab_viz)
@@ -699,8 +710,8 @@ class DNAApp(tk.Tk):
         for col in columns:
             self.results_table.heading(
                 col,
-                text=col,
-                command=lambda c=col: self.sort_column(c, False)
+                text=f"{col} ⇅",
+                command=lambda c=col: self.sort_column(c)
             )
             self.results_table.column(col, width=90, anchor="center")
 
@@ -720,20 +731,21 @@ class DNAApp(tk.Tk):
         self.log("Analiza zakończona")
         self.draw_visualization()
 
-    def sort_column(self, col, reverse):
-        """Sortowanie kolumny w tabeli wyników"""
+    def sort_column(self, col):
+        """Sortowanie kolumny + strzałki w nagłówkach"""
+
+        # ustalamy kierunek
+        reverse = self.sort_state.get(col, False)
 
         data = []
-
         for child in self.results_table.get_children():
             values = self.results_table.item(child)["values"]
             data.append((values, child))
 
         col_index = self.results_table["columns"].index(col)
 
-        # SPECJALNE SORTOWANIE DLA KOLUMNY SEKWENCJA
+        # specjalne sortowanie dla kolumny Sekwencja (numeryczne)
         if col == "Sekwencja":
-
             def extract_number(text):
                 match = re.search(r"\d+", str(text))
                 return int(match.group()) if match else float("inf")
@@ -744,7 +756,6 @@ class DNAApp(tk.Tk):
             )
 
         else:
-            # standardowe sortowanie
             try:
                 data.sort(key=lambda x: float(x[0][col_index]), reverse=reverse)
             except ValueError:
@@ -754,10 +765,24 @@ class DNAApp(tk.Tk):
         for index, (values, child) in enumerate(data):
             self.results_table.move(child, "", index)
 
+        # reset wszystkich nagłówków
+        for c in self.results_table["columns"]:
+            self.results_table.heading(
+                c,
+                text=c,
+                command=lambda col=c: self.sort_column(col)
+            )
+
+        # ustaw strzałkę tylko dla aktywnej kolumny
+        arrow = " ▲" if not reverse else " ▼"
         self.results_table.heading(
             col,
-            command=lambda: self.sort_column(col, not reverse)
+            text=col + arrow,
+            command=lambda: self.sort_column(col)
         )
+
+        # zapamiętaj nowy stan
+        self.sort_state[col] = not reverse
 
     # ==================================================
     # WIZUALIZACJA I PODSUMOWANIA
