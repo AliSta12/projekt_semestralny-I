@@ -23,6 +23,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 import csv
 import os
+import re
 
 
 # ==================================================
@@ -186,10 +187,13 @@ class DNAApp(tk.Tk):
         self.sequences = {}
         self.current_fasta = None
         self.motifs = []
+        self.DEV_MODE = True  # <-- zmień na False gdy niepotrzebne
 
         # budowa interfejsu
         self.create_menu()
         self.create_layout()
+        if self.DEV_MODE:
+            self.load_test_data()
 
     # ==================================================
     # MENU GÓRNE
@@ -281,23 +285,15 @@ class DNAApp(tk.Tk):
         self.motif_listbox = tk.Listbox(self.tab_motifs)
         self.motif_listbox.pack(fill="both", expand=True)
 
-        # --- tabela wyników ---
+        # --- tabela wyników (macierzowa) ---
         results_frame = tk.Frame(self.tab_results)
         results_frame.pack(fill="both", expand=True)
 
         self.results_table = ttk.Treeview(
             results_frame,
-            columns=("seq", "motif", "count"),
             show="headings"
         )
-        self.results_table.heading("seq", text="Sekwencja")
-        self.results_table.heading("motif", text="Motyw")
-        self.results_table.heading("count", text="Liczba")
         self.results_table.pack(fill="both", expand=True)
-
-        # --- tabela podsumowań ---
-        self.summary_table = ttk.Treeview(results_frame, show="headings")
-        self.summary_table.pack(fill="x")
 
         # --- wizualizacja ---
         self.viz_frame = tk.Frame(self.tab_viz)
@@ -365,6 +361,34 @@ class DNAApp(tk.Tk):
 
         if self.export_listbox.size() == 0:
             self.export_listbox.insert("end", "(brak plików CSV)")
+
+    def load_test_data(self):
+        """Ładuje przykładowe dane testowe (tryb developerski)"""
+
+        # --- przykładowe sekwencje ---
+        self.sequences = {
+            "seq1": "ATGCGTATGCGTATGTATAAAGGGCGGATGCGT",
+            "seq2": "TTGACATATAATAGGAGGATGCGTTAA",
+            "seq10": "GGGAAATGCAAATAATAAATGCGTATG",
+            "seq20": "TATAAAGGGCGGCANNTGTGACGTCA"
+        }
+
+        # --- przykładowe motywy ---
+        self.motifs = ["ATG", "TATAAA", "GGGCGG"]
+
+        # wyczyść GUI
+        self.preview_box.delete("1.0", "end")
+        self.motif_listbox.delete(0, "end")
+
+        # wstaw podgląd sekwencji
+        for k, v in self.sequences.items():
+            self.preview_box.insert("end", f">{k}\n{v}\n\n")
+
+        # wstaw motywy
+        for m in self.motifs:
+            self.motif_listbox.insert("end", m)
+
+        self.log("Załadowano dane testowe (DEV_MODE)")
 
     # ==================================================
     # AKCJE UŻYTKOWNIKA
@@ -658,26 +682,82 @@ class DNAApp(tk.Tk):
         frm_pro.pack_forget()
 
     def run_analysis(self):
-        """Uruchamia analizę motywów dla wszystkich sekwencji"""
+        """Buduje macierzową tabelę pivot"""
 
         if not self.sequences or not self.motifs:
             messagebox.showwarning("Błąd", "Wczytaj FASTA i dodaj motywy")
             return
 
+        # wyczyść tabelę
         for row in self.results_table.get_children():
             self.results_table.delete(row)
 
+        # dynamiczne kolumny
+        columns = ["Sekwencja"] + self.motifs + ["SUMA"]
+        self.results_table["columns"] = columns
+
+        for col in columns:
+            self.results_table.heading(
+                col,
+                text=col,
+                command=lambda c=col: self.sort_column(c, False)
+            )
+            self.results_table.column(col, width=90, anchor="center")
+
+        # wypełnianie tabeli
         for seq_id, seq in self.sequences.items():
+            row = [seq_id]
+            total = 0
+
             for motif in self.motifs:
-                c = iupac_count(seq, motif)
-                self.results_table.insert("", "end", values=(seq_id, motif, c))
+                count = iupac_count(seq, motif)
+                row.append(count)
+                total += count
+
+            row.append(total)
+            self.results_table.insert("", "end", values=row)
 
         self.log("Analiza zakończona")
         self.draw_visualization()
-        self.build_summary()
 
+    def sort_column(self, col, reverse):
+        """Sortowanie kolumny w tabeli wyników"""
 
+        data = []
 
+        for child in self.results_table.get_children():
+            values = self.results_table.item(child)["values"]
+            data.append((values, child))
+
+        col_index = self.results_table["columns"].index(col)
+
+        # SPECJALNE SORTOWANIE DLA KOLUMNY SEKWENCJA
+        if col == "Sekwencja":
+
+            def extract_number(text):
+                match = re.search(r"\d+", str(text))
+                return int(match.group()) if match else float("inf")
+
+            data.sort(
+                key=lambda x: extract_number(x[0][col_index]),
+                reverse=reverse
+            )
+
+        else:
+            # standardowe sortowanie
+            try:
+                data.sort(key=lambda x: float(x[0][col_index]), reverse=reverse)
+            except ValueError:
+                data.sort(key=lambda x: x[0][col_index], reverse=reverse)
+
+        # przestaw wiersze
+        for index, (values, child) in enumerate(data):
+            self.results_table.move(child, "", index)
+
+        self.results_table.heading(
+            col,
+            command=lambda: self.sort_column(col, not reverse)
+        )
 
     # ==================================================
     # WIZUALIZACJA I PODSUMOWANIA
@@ -746,36 +826,6 @@ class DNAApp(tk.Tk):
                             f"Sekwencja: {s}\nMotyw: {m}\nPozycja: {pos}"
                         )
                     )
-
-    def build_summary(self):
-        """Buduje tabelę podsumowań liczby motywów"""
-
-        for c in self.summary_table.get_children():
-            self.summary_table.delete(c)
-
-        cols = ["Sekwencja"] + self.motifs + ["SUMA"]
-        self.summary_table["columns"] = cols
-
-        for c in cols:
-            self.summary_table.heading(c, text=c)
-            self.summary_table.column(c, width=80)
-
-        for seq_id in self.sequences:
-            row = [seq_id]
-            total = 0
-
-            for motif in self.motifs:
-                s = 0
-                for item in self.results_table.get_children():
-                    v = self.results_table.item(item)["values"]
-                    if v[0] == seq_id and v[1] == motif:
-                        s += v[2]
-
-                row.append(s)
-                total += s
-
-            row.append(total)
-            self.summary_table.insert("", "end", values=row)
 
     # ==================================================
     # EKSPORT I INFORMACJE
