@@ -190,11 +190,13 @@ class DNAApp(tk.Tk):
         self.DEV_MODE = True  # <-- zmień na False gdy niepotrzebne
 
         # budowa interfejsu
+        self.sort_state = {}  # zapamiętuje kierunek sortowania kolumn
+        self.normalization_mode = tk.StringVar(value="raw")
+
         self.create_menu()
         self.create_layout()
         if self.DEV_MODE:
             self.load_test_data()
-        self.sort_state = {}  # zapamiętuje kierunek sortowania kolumn
 
     # ==================================================
     # MENU GÓRNE
@@ -290,6 +292,32 @@ class DNAApp(tk.Tk):
         results_frame = tk.Frame(self.tab_results)
         results_frame.pack(fill="both", expand=True)
 
+        # ===== TRYB WYŚWIETLANIA =====
+        mode_frame = tk.Frame(results_frame)
+        mode_frame.pack(fill="x", pady=(5, 0))
+
+        tk.Label(
+            mode_frame,
+            text="Tryb wyświetlania:"
+        ).pack(side="left", padx=(5, 5))
+
+        tk.Radiobutton(
+            mode_frame,
+            text="Surowe liczby",
+            variable=self.normalization_mode,
+            value="raw",
+            command=self.run_analysis
+        ).pack(side="left")
+
+        tk.Radiobutton(
+            mode_frame,
+            text="Na 1000 nt",
+            variable=self.normalization_mode,
+            value="norm",
+            command=self.run_analysis
+        ).pack(side="left")
+
+        # ===== TABELA =====
         self.results_table = ttk.Treeview(
             results_frame,
             show="headings"
@@ -719,13 +747,20 @@ class DNAApp(tk.Tk):
         for seq_id, seq in self.sequences.items():
             row = [seq_id]
             total = 0
+            seq_length = len(seq)
 
             for motif in self.motifs:
                 count = iupac_count(seq, motif)
-                row.append(count)
-                total += count
 
-            row.append(total)
+                if self.normalization_mode.get() == "norm" and seq_length > 0:
+                    value = round((count / seq_length) * 1000, 1)
+                else:
+                    value = count
+
+                row.append(value)
+                total += value
+
+            row.append(round(total, 1))
             self.results_table.insert("", "end", values=row)
 
         self.log("Analiza zakończona")
