@@ -200,6 +200,8 @@ class DNAApp(tk.Tk):
         self.create_layout()
         if self.DEV_MODE:
             self.load_test_data()
+        self.active_label_x = None
+        self.active_label_y = None
         self.selected_sequence = None
         self.selected_motif = None
 
@@ -848,9 +850,6 @@ class DNAApp(tk.Tk):
         # tworzymy wykres
         fig, ax = plt.subplots(figsize=(8, 5))
 
-        # tworzymy wykres
-        fig, ax = plt.subplots(figsize=(8, 5))
-
         # ustalamy maksymalną skalę kolorów
         from matplotlib import colors
 
@@ -886,19 +885,20 @@ class DNAApp(tk.Tk):
                     fontsize=8
                 )
 
-        # etykiety osi
+        # etykiety osi x
         ax.set_xticks(np.arange(len(self.motifs)))
         ax.set_xticklabels(self.motifs, rotation=45, ha="right")
 
-        # Umożliwiamy klikanie w etykiety osi
-        for label in ax.get_xticklabels():
-            label.set_picker(True)
-
-        for label in ax.get_yticklabels():
-            label.set_picker(True)
-
+        # etykiety osi y
         ax.set_yticks(np.arange(len(self.sequences)))
         ax.set_yticklabels(list(self.sequences.keys()))
+
+        # Umożliwiamy klikanie w etykiety osi
+        for label in ax.get_xticklabels():
+            label.set_picker(5)
+
+        for label in ax.get_yticklabels():
+            label.set_picker(5)
 
         # colorbar
         cbar = fig.colorbar(im)
@@ -911,36 +911,48 @@ class DNAApp(tk.Tk):
         # osadzamy w Tkinter
         canvas = FigureCanvasTkAgg(fig, master=self.viz_top)
         canvas.draw()
+        canvas.mpl_connect("pick_event", self.on_pick)
         canvas_widget = canvas.get_tk_widget()
         canvas_widget.pack(fill="both", expand=True)
 
-        # obsługa kliknięcia
-        def on_click(event):
-            if event.ydata is None:
-                return
+    def on_pick(self, event):
+        if not hasattr(event.artist, "get_text"):
+            return
 
-            row_index = int(round(event.ydata))
+        label = event.artist
+        text = label.get_text()
 
-            if 0 <= row_index < len(self.sequences):
-                seq_id = list(self.sequences.keys())[row_index]
-                self.selected_sequence = seq_id
-                self.draw_barplot()
+        # Reset poprzednich podświetleń
+        if self.active_label_x:
+            self.active_label_x.set_color("black")
+            self.active_label_x.set_fontweight("normal")
 
-        def on_pick(event):
-            label = event.artist
-            text = label.get_text()
+        if self.active_label_y:
+            self.active_label_y.set_color("black")
+            self.active_label_y.set_fontweight("normal")
 
-            # Kliknięto sekwencję (oś Y)
-            if text in self.sequences:
-                self.selected_sequence = text
-                self.draw_barplot_sequence()
+        # Kliknięto sekwencję (oś Y)
+        if text in self.sequences:
+            self.selected_sequence = text
+            self.draw_barplot_sequence()
 
-            # Kliknięto motyw (oś X)
-            elif text in self.motifs:
-                self.selected_motif = text
-                self.draw_barplot_motif()
+            label.set_color("red")
+            label.set_fontweight("bold")
+            self.active_label_y = label
+            self.active_label_x = None
 
-        canvas.mpl_connect("pick_event", on_pick)
+        # Kliknięto motyw (oś X)
+        elif text in self.motifs:
+            self.selected_motif = text
+            self.draw_barplot_motif()
+
+            label.set_color("red")
+            label.set_fontweight("bold")
+            self.active_label_x = label
+            self.active_label_y = None
+
+        # 🔥 kluczowe do podświetlenia
+        event.canvas.draw_idle()
 
     def draw_barplot_sequence(self):
         """
