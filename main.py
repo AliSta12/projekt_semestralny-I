@@ -379,6 +379,16 @@ class DNAApp(tk.Tk):
         self.viz_bottom.pack(fill="x")
         self.viz_bottom.pack_propagate(False)
 
+        # Przycisk zamykania barplotu
+        self.close_barplot_btn = tk.Button(
+            self.viz_frame,
+            text="✖ Zamknij wykres",
+            command=self.hide_barplot
+        )
+
+        # Na start przycisk ukryty (bo nie ma jeszcze wykresu)
+        self.close_barplot_btn.pack_forget()
+
         # --- eksport ---
         tk.Label(self.tab_export, text="Pliki wynikowe CSV:").pack(anchor="w")
         self.export_listbox = tk.Listbox(self.tab_export)
@@ -966,6 +976,7 @@ class DNAApp(tk.Tk):
         # osadzamy w Tkinter
         canvas = FigureCanvasTkAgg(fig, master=self.viz_top)
         canvas.draw()
+        self.current_canvas = canvas
         canvas.mpl_connect("pick_event", self.on_pick)
         canvas.mpl_connect("motion_notify_event", self.on_hover)
         canvas_widget = canvas.get_tk_widget()
@@ -1092,6 +1103,10 @@ class DNAApp(tk.Tk):
         canvas_widget = canvas.get_tk_widget()
         canvas_widget.pack(fill="both", expand=True, padx=10, pady=10)
 
+        # pokaż panel i przycisk
+        self.viz_bottom.pack(fill="x")
+        self.close_barplot_btn.pack(pady=(5, 0))
+
     def draw_barplot_motif(self):
         """Rysuje wykres słupkowy dla wybranego motywu (rozkład w sekwencjach)."""
 
@@ -1153,6 +1168,10 @@ class DNAApp(tk.Tk):
         canvas_widget = canvas.get_tk_widget()
         canvas_widget.pack(fill="both", expand=True, padx=10, pady=10)
 
+        # pokaż panel i przycisk
+        self.viz_bottom.pack(fill="x")
+        self.close_barplot_btn.pack(pady=(5, 0))
+
     def on_hover(self, event):
         # jeśli poza wykresem → nic nie rób
         if event.inaxes is None:
@@ -1196,6 +1215,41 @@ class DNAApp(tk.Tk):
         if hasattr(self, "selected_motif") and self.selected_motif:
             self.draw_barplot_motif()
 
+    def hide_barplot(self):
+        """
+        Ukrywa panel wykresu słupkowego
+        i resetuje zaznaczenia etykiet.
+        """
+
+        # wyczyść dolny panel
+        for w in self.viz_bottom.winfo_children():
+            w.destroy()
+
+        # ukryj panel
+        self.viz_bottom.pack_forget()
+
+        # ukryj przycisk
+        self.close_barplot_btn.pack_forget()
+
+        # reset podświetlenia etykiet X
+        if hasattr(self, "active_label_x") and self.active_label_x:
+            self.active_label_x.set_color("black")
+            self.active_label_x.set_fontweight("normal")
+            self.active_label_x = None
+
+        # reset podświetlenia etykiet Y
+        if hasattr(self, "active_label_y") and self.active_label_y:
+            self.active_label_y.set_color("black")
+            self.active_label_y.set_fontweight("normal")
+            self.active_label_y = None
+
+        # reset wyboru
+        self.selected_sequence = None
+        self.selected_motif = None
+
+        # odśwież canvas (żeby zmiana koloru była widoczna)
+        if hasattr(self, "current_canvas"):
+            self.current_canvas.draw_idle()
 
     # ==================================================
     # EKSPORT I INFORMACJE
