@@ -200,6 +200,7 @@ class DNAApp(tk.Tk):
         self.create_layout()
         if self.DEV_MODE:
             self.load_test_data()
+        self.selected_sequence = None
 
     # ==================================================
     # MENU GÓRNE
@@ -341,27 +342,13 @@ class DNAApp(tk.Tk):
         self.viz_frame = tk.Frame(self.tab_viz)
         self.viz_frame.pack(fill="both", expand=True)
 
-        self.viz_canvas = tk.Canvas(self.viz_frame, bg="white")
-        self.viz_canvas.pack(side="left", fill="both", expand=True)
+        # Górna część – heatmapa
+        self.viz_top = tk.Frame(self.viz_frame)
+        self.viz_top.pack(fill="both", expand=True)
 
-        self.viz_scroll = ttk.Scrollbar(
-            self.viz_frame,
-            orient="vertical",
-            command=self.viz_canvas.yview
-        )
-        self.viz_scroll.pack(side="right", fill="y")
-
-        self.viz_canvas.configure(yscrollcommand=self.viz_scroll.set)
-
-        self.viz_inner = tk.Frame(self.viz_canvas)
-        self.viz_canvas.create_window((0, 0), window=self.viz_inner, anchor="nw")
-
-        self.viz_inner.bind(
-            "<Configure>",
-            lambda e: self.viz_canvas.configure(
-                scrollregion=self.viz_canvas.bbox("all")
-            )
-        )
+        # Dolna część – wykres słupkowy
+        self.viz_bottom = tk.Frame(self.viz_frame)
+        self.viz_bottom.pack(fill="both", expand=True)
 
         # --- eksport ---
         tk.Label(self.tab_export, text="Pliki wynikowe CSV:").pack(anchor="w")
@@ -829,8 +816,8 @@ class DNAApp(tk.Tk):
     def draw_visualization(self):
         """Rysuje heatmapę motywów"""
 
-        # wyczyść poprzednią zawartość
-        for w in self.viz_inner.winfo_children():
+        # Czyścimy tylko górną część (heatmapę)
+        for w in self.viz_top.winfo_children():
             w.destroy()
 
         if not self.sequences or not self.motifs:
@@ -860,6 +847,10 @@ class DNAApp(tk.Tk):
         # tworzymy wykres
         fig, ax = plt.subplots(figsize=(8, 5))
 
+        # tworzymy wykres
+        fig, ax = plt.subplots(figsize=(8, 5))
+
+        # ustalamy maksymalną skalę kolorów
         from matplotlib import colors
 
         norm = colors.Normalize(
@@ -910,9 +901,93 @@ class DNAApp(tk.Tk):
         fig.tight_layout()
 
         # osadzamy w Tkinter
-        canvas = FigureCanvasTkAgg(fig, master=self.viz_inner)
+        canvas = FigureCanvasTkAgg(fig, master=self.viz_top)
+        canvas.draw()
+        canvas_widget = canvas.get_tk_widget()
+        canvas_widget.pack(fill="both", expand=True)
+
+        # obsługa kliknięcia
+        def on_click(event):
+            if event.ydata is None:
+                return
+
+            row_index = int(round(event.ydata))
+
+            if 0 <= row_index < len(self.sequences):
+                seq_id = list(self.sequences.keys())[row_index]
+                self.selected_sequence = seq_id
+                self.draw_barplot()
+
+        canvas.mpl_connect("button_press_event", on_click)
+
+    def draw_barplot(self):
+        """
+        Rysuje wykres słupkowy dla aktualnie wybranej sekwencji.
+
+        Wykres pokazuje:
+        - liczbę wystąpień każdego motywu
+        - lub wartości znormalizowane (na 1000 nt),
+          w zależności od wybranego trybu (raw / norm).
+        """
+
+        # Jeśli nie wybrano sekwencji (np. brak kliknięcia w heatmapę)
+        if not self.selected_sequence:
+            return
+
+        # Pobieramy sekwencję DNA na podstawie zapisanego ID
+        seq = self.sequences[self.selected_sequence]
+        seq_length = len(seq)
+
+        # Lista wartości dla osi Y (liczby motywów)
+        values = []
+
+        # Dla każdego motywu liczymy jego wystąpienia
+        for motif in self.motifs:
+            count = iupac_count(seq, motif)
+
+            # Jeśli wybrano tryb normalizacji
+            # przeliczamy na 1000 nukleotydów
+            if self.normalization_mode.get() == "norm" and seq_length > 0:
+                value = (count / seq_length) * 1000
+            else:
+                value = count
+
+            values.append(value)
+
+        # Tworzymy nową figurę matplotlib
+        fig, ax = plt.subplots(figsize=(8, 4))
+
+        # Pozycje słupków (numeryczne indeksy motywów)
+        x_positions = np.arange(len(self.motifs))
+
+        # Rysowanie słupków
+        ax.bar(x_positions, values)
+
+        # Ustawienie ticków i ich etykiet
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels(self.motifs, rotation=45, ha="right")
+
+        # Opis osi Y zależny od trybu
+        if self.normalization_mode.get() == "norm":
+            ax.set_ylabel("Liczba motywów (na 1000 nt)")
+        else:
+            ax.set_ylabel("Liczba wystąpień")
+
+        # Obracamy etykiety motywów, żeby się nie nachodziły
+        ax.set_xticklabels(self.motifs, rotation=45, ha="right")
+
+        # Dopasowanie marginesów
+        fig.tight_layout()
+
+        # Czyścimy poprzedni wykres słupkowy
+        for w in self.viz_bottom.winfo_children():
+            w.destroy()
+
+        # Osadzamy wykres w Tkinter
+        canvas = FigureCanvasTkAgg(fig, master=self.viz_bottom)
         canvas.draw()
         canvas.get_tk_widget().pack(fill="both", expand=True)
+
 
     # ==================================================
     # EKSPORT I INFORMACJE
