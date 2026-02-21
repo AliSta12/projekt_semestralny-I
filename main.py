@@ -345,13 +345,16 @@ class DNAApp(tk.Tk):
         self.viz_frame = tk.Frame(self.tab_viz)
         self.viz_frame.pack(fill="both", expand=True)
 
-        # Górna część – heatmapa
+
+
+        # Górna część – heatmapa (elastyczna)
         self.viz_top = tk.Frame(self.viz_frame)
         self.viz_top.pack(fill="both", expand=True)
 
-        # Dolna część – wykres słupkowy
-        self.viz_bottom = tk.Frame(self.viz_frame)
-        self.viz_bottom.pack(fill="both", expand=True)
+        # Dolna część – wykres słupkowy (stała wysokość)
+        self.viz_bottom = tk.Frame(self.viz_frame, height=260)
+        self.viz_bottom.pack(fill="x")
+        self.viz_bottom.pack_propagate(False)
 
         # --- eksport ---
         tk.Label(self.tab_export, text="Pliki wynikowe CSV:").pack(anchor="w")
@@ -928,7 +931,12 @@ class DNAApp(tk.Tk):
         cbar = fig.colorbar(im)
         cbar.set_label("Liczba motywów" if self.normalization_mode.get() == "raw" else "Na 1000 nt")
 
-        ax.set_title("Heatmapa wystąpień motywów")
+        ax.set_title(
+            "Heatmapa wystąpień motywów",
+            fontsize=14,
+            fontweight="bold",
+            pad=15
+        )
 
         fig.tight_layout()
 
@@ -1016,33 +1024,39 @@ class DNAApp(tk.Tk):
         # Tworzymy nową figurę matplotlib
         fig, ax = plt.subplots(figsize=(6, 4))
 
-        # Główny tytuł wykresu
-        fig.suptitle("Rozkład motywów w sekwencji", fontsize=12, fontweight="bold")
+        # Główny tytuł wykresu (spójny z heatmapą)
+        fig.suptitle(
+            "Rozkład motywów w sekwencji",
+            fontsize=14,
+            fontweight="bold"
+        )
 
-        # Pozycje słupków (numeryczne indeksy motywów)
+        # Pozycje słupków
         x_positions = np.arange(len(self.motifs))
 
         # Rysowanie słupków
         ax.bar(x_positions, values)
 
-        # Ustawienie ticków i ich etykiet
         ax.set_xticks(x_positions)
         ax.set_xticklabels(self.motifs, rotation=45, ha="right")
 
-        # Nagłówek wykresu – która sekwencja
-        ax.set_title(f"Sekwencja: {self.selected_sequence}")
+        # Podtytuł – konkretna sekwencja
+        ax.set_title(
+            f"Sekwencja: {self.selected_sequence}",
+            fontsize=11,
+            fontweight="normal",
+            pad=5
+        )
 
-        # Opis osi Y zależny od trybu
-        if self.normalization_mode.get() == "norm":
-            ax.set_ylabel("Liczba motywów (na 1000 nt)")
-        else:
-            ax.set_ylabel("Liczba wystąpień")
+        # Opis osi Y
+        ax.set_ylabel(
+            "Na 1000 nt"
+            if self.normalization_mode.get() == "norm"
+            else "Liczba"
+        )
 
-        # Obracamy etykiety motywów, żeby się nie nachodziły
-        ax.set_xticklabels(self.motifs, rotation=45, ha="right")
-
-        # Dopasowanie marginesów
-        fig.tight_layout(rect=[0, 0, 1, 0.95])
+        fig.tight_layout(rect=[0, 0, 1, 0.92])
+        fig.subplots_adjust(bottom=0.30)
 
         # Czyścimy poprzedni wykres słupkowy
         for w in self.viz_bottom.winfo_children():
@@ -1053,7 +1067,7 @@ class DNAApp(tk.Tk):
         canvas.draw()
 
         canvas_widget = canvas.get_tk_widget()
-        canvas_widget.pack(anchor="w", padx=40, pady=10)
+        canvas_widget.pack(fill="both", expand=True, padx=10, pady=10)
 
     def draw_barplot_motif(self):
         """Rysuje wykres słupkowy dla wybranego motywu (rozkład w sekwencjach)."""
@@ -1080,8 +1094,12 @@ class DNAApp(tk.Tk):
 
         fig, ax = plt.subplots(figsize=(6, 4))
 
-        # Główny tytuł wykresu
-        fig.suptitle("Rozkład motywu w sekwencjach", fontsize=12, fontweight="bold")
+        # Główny tytuł wykresu (taki sam styl jak heatmapa)
+        fig.suptitle(
+            "Rozkład motywu w sekwencjach",
+            fontsize=14,
+            fontweight="bold"
+        )
 
         x_positions = np.arange(len(self.sequences))
         ax.bar(x_positions, values)
@@ -1089,16 +1107,28 @@ class DNAApp(tk.Tk):
         ax.set_xticks(x_positions)
         ax.set_xticklabels(list(self.sequences.keys()), rotation=45, ha="right")
 
-        ax.set_title(f"Motyw: {self.selected_motif}")
-        ax.set_ylabel("Na 1000 nt" if self.normalization_mode.get() == "norm" else "Liczba")
+        # Podtytuł – konkretna nazwa motywu
+        ax.set_title(
+            f"Motyw: {self.selected_motif}",
+            fontsize=11,
+            fontweight="normal",
+            pad=5
+        )
 
-        fig.tight_layout()
+        ax.set_ylabel(
+            "Na 1000 nt"
+            if self.normalization_mode.get() == "norm"
+            else "Liczba"
+        )
+
+        fig.tight_layout(rect=[0, 0, 1, 0.92])
+        fig.subplots_adjust(bottom=0.30)
 
         canvas = FigureCanvasTkAgg(fig, master=self.viz_bottom)
         canvas.draw()
 
         canvas_widget = canvas.get_tk_widget()
-        canvas_widget.pack(anchor="w", padx=40, pady=10)
+        canvas_widget.pack(fill="both", expand=True, padx=10, pady=10)
 
     def on_hover(self, event):
         # jeśli poza wykresem → nic nie rób
