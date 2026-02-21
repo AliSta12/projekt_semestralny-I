@@ -201,6 +201,7 @@ class DNAApp(tk.Tk):
         if self.DEV_MODE:
             self.load_test_data()
         self.selected_sequence = None
+        self.selected_motif = None
 
     # ==================================================
     # MENU GÓRNE
@@ -889,6 +890,13 @@ class DNAApp(tk.Tk):
         ax.set_xticks(np.arange(len(self.motifs)))
         ax.set_xticklabels(self.motifs, rotation=45, ha="right")
 
+        # Umożliwiamy klikanie w etykiety osi
+        for label in ax.get_xticklabels():
+            label.set_picker(True)
+
+        for label in ax.get_yticklabels():
+            label.set_picker(True)
+
         ax.set_yticks(np.arange(len(self.sequences)))
         ax.set_yticklabels(list(self.sequences.keys()))
 
@@ -918,9 +926,23 @@ class DNAApp(tk.Tk):
                 self.selected_sequence = seq_id
                 self.draw_barplot()
 
-        canvas.mpl_connect("button_press_event", on_click)
+        def on_pick(event):
+            label = event.artist
+            text = label.get_text()
 
-    def draw_barplot(self):
+            # Kliknięto sekwencję (oś Y)
+            if text in self.sequences:
+                self.selected_sequence = text
+                self.draw_barplot_sequence()
+
+            # Kliknięto motyw (oś X)
+            elif text in self.motifs:
+                self.selected_motif = text
+                self.draw_barplot_motif()
+
+        canvas.mpl_connect("pick_event", on_pick)
+
+    def draw_barplot_sequence(self):
         """
         Rysuje wykres słupkowy dla aktualnie wybranej sekwencji.
 
@@ -984,6 +1006,46 @@ class DNAApp(tk.Tk):
             w.destroy()
 
         # Osadzamy wykres w Tkinter
+        canvas = FigureCanvasTkAgg(fig, master=self.viz_bottom)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
+
+    def draw_barplot_motif(self):
+        """Rysuje wykres słupkowy dla wybranego motywu (rozkład w sekwencjach)."""
+
+        if not self.selected_motif:
+            return
+
+        values = []
+
+        for seq_id, seq in self.sequences.items():
+            seq_length = len(seq)
+            count = iupac_count(seq, self.selected_motif)
+
+            if self.normalization_mode.get() == "norm" and seq_length > 0:
+                value = (count / seq_length) * 1000
+            else:
+                value = count
+
+            values.append(value)
+
+        # Czyścimy dolny panel
+        for w in self.viz_bottom.winfo_children():
+            w.destroy()
+
+        fig, ax = plt.subplots(figsize=(8, 4))
+
+        x_positions = np.arange(len(self.sequences))
+        ax.bar(x_positions, values)
+
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels(list(self.sequences.keys()), rotation=45, ha="right")
+
+        ax.set_title(f"Motyw: {self.selected_motif}")
+        ax.set_ylabel("Na 1000 nt" if self.normalization_mode.get() == "norm" else "Liczba")
+
+        fig.tight_layout()
+
         canvas = FigureCanvasTkAgg(fig, master=self.viz_bottom)
         canvas.draw()
         canvas.get_tk_widget().pack(fill="both", expand=True)
