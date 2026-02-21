@@ -873,8 +873,6 @@ class DNAApp(tk.Tk):
             cmap="viridis_r",
             norm=norm
         )
-        print("MIN:", np.min(data))
-        print("MAX:", np.max(data))
 
         # wpisanie wartości do komórek
         for i in range(data.shape[0]):
