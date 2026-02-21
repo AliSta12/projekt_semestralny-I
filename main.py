@@ -345,13 +345,36 @@ class DNAApp(tk.Tk):
         self.viz_frame = tk.Frame(self.tab_viz)
         self.viz_frame.pack(fill="both", expand=True)
 
+        # Panel sterowania (musi być w viz_frame!)
+        viz_controls = tk.Frame(self.viz_frame)
+        viz_controls.pack(fill="x", pady=(5, 0))
 
+        tk.Label(
+            viz_controls,
+            text="Tryb wyświetlania:"
+        ).pack(side="left", padx=(10, 5))
 
-        # Górna część – heatmapa (elastyczna)
+        tk.Radiobutton(
+            viz_controls,
+            text="Surowe",
+            variable=self.normalization_mode,
+            value="raw",
+            command=self.refresh_visualization
+        ).pack(side="left")
+
+        tk.Radiobutton(
+            viz_controls,
+            text="Na 1000 nt",
+            variable=self.normalization_mode,
+            value="norm",
+            command=self.refresh_visualization
+        ).pack(side="left")
+
+        # Górna część – heatmapa
         self.viz_top = tk.Frame(self.viz_frame)
         self.viz_top.pack(fill="both", expand=True)
 
-        # Dolna część – wykres słupkowy (stała wysokość)
+        # Dolna część – barplot
         self.viz_bottom = tk.Frame(self.viz_frame, height=260)
         self.viz_bottom.pack(fill="x")
         self.viz_bottom.pack_propagate(False)
@@ -1158,6 +1181,20 @@ class DNAApp(tk.Tk):
         else:
             self.hover_annotation.set_visible(False)
             event.canvas.draw_idle()
+
+    def refresh_visualization(self):
+        """
+        Odświeża heatmapę i barplot po zmianie trybu raw / norm.
+        """
+
+        self.draw_visualization()
+
+        # jeśli coś było wybrane – przerysuj barplot
+        if hasattr(self, "selected_sequence") and self.selected_sequence:
+            self.draw_barplot_sequence()
+
+        if hasattr(self, "selected_motif") and self.selected_motif:
+            self.draw_barplot_motif()
 
 
     # ==================================================
