@@ -846,9 +846,22 @@ class DNAApp(tk.Tk):
             data.append(row)
 
         data = np.array(data)
+        self.heatmap_data = data
 
         # tworzymy wykres
         fig, ax = plt.subplots(figsize=(8, 5))
+
+        # krótka instrukcja dla użytkownika
+        ax.text(
+            0.5,
+            1.15,
+            "Kliknij nazwę sekwencji (oś Y) lub motywu (oś X), aby wyświetlić wykres słupkowy.",
+            transform=ax.transAxes,
+            ha="center",
+            va="bottom",
+            fontsize=9,
+            color="dimgray"
+        )
 
         # ustalamy maksymalną skalę kolorów
         from matplotlib import colors
@@ -864,6 +877,17 @@ class DNAApp(tk.Tk):
             cmap="viridis_r",
             norm=norm
         )
+
+        # ===== Tooltip (hover) =====
+        self.hover_annotation = ax.annotate(
+            "",
+            xy=(0, 0),
+            xytext=(10, 10),
+            textcoords="offset points",
+            bbox=dict(boxstyle="round", fc="white", ec="gray"),
+            fontsize=9
+        )
+        self.hover_annotation.set_visible(False)
 
         # wpisanie wartości do komórek
         for i in range(data.shape[0]):
@@ -912,6 +936,7 @@ class DNAApp(tk.Tk):
         canvas = FigureCanvasTkAgg(fig, master=self.viz_top)
         canvas.draw()
         canvas.mpl_connect("pick_event", self.on_pick)
+        canvas.mpl_connect("motion_notify_event", self.on_hover)
         canvas_widget = canvas.get_tk_widget()
         canvas_widget.pack(fill="both", expand=True)
 
@@ -1061,6 +1086,35 @@ class DNAApp(tk.Tk):
         canvas = FigureCanvasTkAgg(fig, master=self.viz_bottom)
         canvas.draw()
         canvas.get_tk_widget().pack(fill="both", expand=True)
+
+    def on_hover(self, event):
+        # jeśli poza wykresem → nic nie rób
+        if event.inaxes is None:
+            if hasattr(self, "hover_annotation"):
+                self.hover_annotation.set_visible(False)
+                event.canvas.draw_idle()
+            return
+
+        if not hasattr(self, "heatmap_data"):
+            return
+
+        x = int(round(event.xdata))
+        y = int(round(event.ydata))
+
+        if 0 <= x < len(self.motifs) and 0 <= y < len(self.sequences):
+            seq_id = list(self.sequences.keys())[y]
+            motif = self.motifs[x]
+            value = self.heatmap_data[y, x]
+
+            text = f"{seq_id}\n{motif}"
+
+            self.hover_annotation.xy = (x, y)
+            self.hover_annotation.set_text(text)
+            self.hover_annotation.set_visible(True)
+            event.canvas.draw_idle()
+        else:
+            self.hover_annotation.set_visible(False)
+            event.canvas.draw_idle()
 
 
     # ==================================================
