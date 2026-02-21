@@ -24,6 +24,9 @@ from tkinter import ttk, filedialog, messagebox, simpledialog
 import csv
 import os
 import re
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import numpy as np
 
 
 # ==================================================
@@ -824,68 +827,94 @@ class DNAApp(tk.Tk):
     # ==================================================
 
     def draw_visualization(self):
-        """Rysuje mapę wystąpień motywów na sekwencjach DNA"""
+        """Rysuje heatmapę motywów"""
 
+        # wyczyść poprzednią zawartość
         for w in self.viz_inner.winfo_children():
             w.destroy()
 
         if not self.sequences or not self.motifs:
             return
 
-        left = 120
-        width = 700
-        line_h = 40
+        # budujemy macierz danych
+        data = []
 
-        palette = ["#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#a65628"]
-        motif_colors = {m: palette[i % len(palette)] for i, m in enumerate(self.motifs)}
-
-        legend = tk.Frame(self.viz_inner)
-        legend.pack(anchor="w", pady=5)
-
-        for m, c in motif_colors.items():
-            tk.Label(legend, text=m, fg=c).pack(side="left", padx=10)
-
-        for row, (seq_id, seq) in enumerate(self.sequences.items()):
-            canvas = tk.Canvas(
-                self.viz_inner,
-                width=left + width + 20,
-                height=line_h,
-                bg="white",
-                highlightthickness=0
-            )
-            canvas.pack(anchor="w")
-
-            canvas.create_text(10, line_h // 2, anchor="w", text=seq_id)
-            canvas.create_line(left, line_h // 2, left + width, line_h // 2, width=2)
-
-            L = len(seq)
-            if L == 0:
-                continue
+        for seq_id, seq in self.sequences.items():
+            row = []
+            seq_length = len(seq)
 
             for motif in self.motifs:
-                color = motif_colors[motif]
-                positions = iupac_find_positions(seq, motif)
+                count = iupac_count(seq, motif)
 
-                for p in positions:
-                    x = left + (p / L) * width
-                    line_id = canvas.create_line(
-                        x,
-                        line_h // 2 - 8,
-                        x,
-                        line_h // 2 + 8,
-                        fill=color,
-                        width=3
-                    )
+                if self.normalization_mode.get() == "norm" and seq_length > 0:
+                    value = (count / seq_length) * 1000
+                else:
+                    value = count
 
-                    canvas.tag_bind(
-                        line_id,
-                        "<Button-1>",
-                        lambda e, s=seq_id, m=motif, pos=p:
-                        messagebox.showinfo(
-                            "Motyw",
-                            f"Sekwencja: {s}\nMotyw: {m}\nPozycja: {pos}"
-                        )
-                    )
+                row.append(value)
+
+            data.append(row)
+
+        data = np.array(data)
+
+        # tworzymy wykres
+        fig, ax = plt.subplots(figsize=(8, 5))
+
+        from matplotlib import colors
+
+        norm = colors.Normalize(
+            vmin=0,
+            vmax=np.max(data) if np.max(data) > 0 else 1
+        )
+
+        im = ax.imshow(
+            data,
+            aspect="auto",
+            cmap="viridis_r",
+            norm=norm
+        )
+        print("MIN:", np.min(data))
+        print("MAX:", np.max(data))
+
+        # wpisanie wartości do komórek
+        for i in range(data.shape[0]):
+            for j in range(data.shape[1]):
+                value = data[i, j]
+
+                if self.normalization_mode.get() == "norm":
+                    text = f"{value:.1f}"
+                else:
+                    text = f"{int(value)}"
+
+                ax.text(
+                    j,
+                    i,
+                    text,
+                    ha="center",
+                    va="center",
+                    color="black",
+                    fontsize=8
+                )
+
+        # etykiety osi
+        ax.set_xticks(np.arange(len(self.motifs)))
+        ax.set_xticklabels(self.motifs, rotation=45, ha="right")
+
+        ax.set_yticks(np.arange(len(self.sequences)))
+        ax.set_yticklabels(list(self.sequences.keys()))
+
+        # colorbar
+        cbar = fig.colorbar(im)
+        cbar.set_label("Liczba motywów" if self.normalization_mode.get() == "raw" else "Na 1000 nt")
+
+        ax.set_title("Heatmapa wystąpień motywów")
+
+        fig.tight_layout()
+
+        # osadzamy w Tkinter
+        canvas = FigureCanvasTkAgg(fig, master=self.viz_inner)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
 
     # ==================================================
     # EKSPORT I INFORMACJE
