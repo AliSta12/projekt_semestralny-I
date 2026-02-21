@@ -1014,7 +1014,10 @@ class DNAApp(tk.Tk):
             values.append(value)
 
         # Tworzymy nową figurę matplotlib
-        fig, ax = plt.subplots(figsize=(8, 4))
+        fig, ax = plt.subplots(figsize=(6, 4))
+
+        # Główny tytuł wykresu
+        fig.suptitle("Rozkład motywów w sekwencji", fontsize=12, fontweight="bold")
 
         # Pozycje słupków (numeryczne indeksy motywów)
         x_positions = np.arange(len(self.motifs))
@@ -1026,6 +1029,9 @@ class DNAApp(tk.Tk):
         ax.set_xticks(x_positions)
         ax.set_xticklabels(self.motifs, rotation=45, ha="right")
 
+        # Nagłówek wykresu – która sekwencja
+        ax.set_title(f"Sekwencja: {self.selected_sequence}")
+
         # Opis osi Y zależny od trybu
         if self.normalization_mode.get() == "norm":
             ax.set_ylabel("Liczba motywów (na 1000 nt)")
@@ -1036,7 +1042,7 @@ class DNAApp(tk.Tk):
         ax.set_xticklabels(self.motifs, rotation=45, ha="right")
 
         # Dopasowanie marginesów
-        fig.tight_layout()
+        fig.tight_layout(rect=[0, 0, 1, 0.95])
 
         # Czyścimy poprzedni wykres słupkowy
         for w in self.viz_bottom.winfo_children():
@@ -1045,7 +1051,9 @@ class DNAApp(tk.Tk):
         # Osadzamy wykres w Tkinter
         canvas = FigureCanvasTkAgg(fig, master=self.viz_bottom)
         canvas.draw()
-        canvas.get_tk_widget().pack(fill="both", expand=True)
+
+        canvas_widget = canvas.get_tk_widget()
+        canvas_widget.pack(anchor="w", padx=40, pady=10)
 
     def draw_barplot_motif(self):
         """Rysuje wykres słupkowy dla wybranego motywu (rozkład w sekwencjach)."""
@@ -1070,7 +1078,10 @@ class DNAApp(tk.Tk):
         for w in self.viz_bottom.winfo_children():
             w.destroy()
 
-        fig, ax = plt.subplots(figsize=(8, 4))
+        fig, ax = plt.subplots(figsize=(6, 4))
+
+        # Główny tytuł wykresu
+        fig.suptitle("Rozkład motywu w sekwencjach", fontsize=12, fontweight="bold")
 
         x_positions = np.arange(len(self.sequences))
         ax.bar(x_positions, values)
@@ -1085,7 +1096,9 @@ class DNAApp(tk.Tk):
 
         canvas = FigureCanvasTkAgg(fig, master=self.viz_bottom)
         canvas.draw()
-        canvas.get_tk_widget().pack(fill="both", expand=True)
+
+        canvas_widget = canvas.get_tk_widget()
+        canvas_widget.pack(anchor="w", padx=40, pady=10)
 
     def on_hover(self, event):
         # jeśli poza wykresem → nic nie rób
