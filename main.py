@@ -204,6 +204,7 @@ class DNAApp(tk.Tk):
         self.active_label_y = None
         self.selected_sequence = None
         self.selected_motif = None
+        self.motif_listbox = None
 
     # ==================================================
     # MENU GÓRNE
@@ -253,47 +254,25 @@ class DNAApp(tk.Tk):
         main_frame = tk.Frame(self)
         main_frame.pack(fill="both", expand=True)
 
-        # --- panel boczny ---
-        side = tk.Frame(main_frame, width=200)
-        side.pack(side="left", fill="y")
-
-        tk.Button(side, text="Wczytaj plik", command=self.gui_load_file).pack(fill="x", pady=2)
-        tk.Button(side, text="Pobierz z NCBI", command=self.download_ncbi).pack(fill="x", pady=2)
-        tk.Button(
-            side,
-            text="Dodaj / usuń motywy",
-            command=self.open_motif_manager
-        ).pack(fill="x", pady=2)
-        tk.Button(side, text="Uruchom analizę", command=self.run_analysis).pack(fill="x", pady=2)
-        tk.Button(side, text="Eksportuj CSV/PDF", command=self.export_data).pack(fill="x", pady=2)
-
         # --- część prawa ---
         right = tk.Frame(main_frame)
-        right.pack(side="right", fill="both", expand=True)
+        right.pack(fill="both", expand=True)
 
         self.tabs = ttk.Notebook(right)
         self.tabs.pack(fill="both", expand=True)
 
         # zakładki
         self.tab_preview = ttk.Frame(self.tabs)
-        self.tab_motifs = ttk.Frame(self.tabs)
         self.tab_results = ttk.Frame(self.tabs)
         self.tab_viz = ttk.Frame(self.tabs)
-        self.tab_export = ttk.Frame(self.tabs)
 
         self.tabs.add(self.tab_preview, text="Podgląd sekwencji")
-        self.tabs.add(self.tab_motifs, text="Szukane motywy")
         self.tabs.add(self.tab_results, text="Wyniki analizy")
         self.tabs.add(self.tab_viz, text="Wizualizacja")
-        self.tabs.add(self.tab_export, text="Eksport")
 
         # --- podgląd FASTA ---
         self.preview_box = tk.Text(self.tab_preview)
         self.preview_box.pack(fill="both", expand=True)
-
-        # --- lista motywów ---
-        self.motif_listbox = tk.Listbox(self.tab_motifs)
-        self.motif_listbox.pack(fill="both", expand=True)
 
         # --- tabela wyników (macierzowa) ---
         results_frame = tk.Frame(self.tab_results)
@@ -389,33 +368,23 @@ class DNAApp(tk.Tk):
         # Na start przycisk ukryty (bo nie ma jeszcze wykresu)
         self.close_barplot_btn.pack_forget()
 
-        # --- eksport ---
-        tk.Label(self.tab_export, text="Pliki wynikowe CSV:").pack(anchor="w")
-        self.export_listbox = tk.Listbox(self.tab_export)
-        self.export_listbox.pack(fill="both", expand=True)
-
-        tk.Button(
-            self.tab_export,
-            text="Odśwież listę",
-            command=self.refresh_csv_files
-        ).pack(pady=5)
-
-        # --- logi ---
-        log_frame = tk.Frame(self)
-        log_frame.pack(fill="x")
-
-        tk.Label(log_frame, text="Logi / komunikaty:").pack(anchor="w")
-        self.log_box = tk.Text(log_frame, height=6)
-        self.log_box.pack(fill="x")
+        # --- pasek statusu ---
+        self.status_var = tk.StringVar(value="Gotowe")
+        status_bar = tk.Label(
+            self,
+            textvariable=self.status_var,
+            bd=1,
+            relief="sunken",
+            anchor="w"
+        )
+        status_bar.pack(side="bottom", fill="x")
 
     # ==================================================
     # FUNKCJE POMOCNICZE
     # ==================================================
 
-    def log(self, msg):
-        """Dodaje komunikat do pola logów"""
-        self.log_box.insert("end", msg + "\n")
-        self.log_box.see("end")
+    def log(self, message):
+        self.status_var.set(message)
 
     def refresh_csv_files(self):
         """Odświeża listę plików CSV w zakładce Eksport"""
@@ -444,17 +413,15 @@ class DNAApp(tk.Tk):
         # --- przykładowe motywy ---
         self.motifs = ["ATG", "TATAAA", "GGGCGG"]
 
-        # wyczyść GUI
+        # wyczyść podgląd
         self.preview_box.delete("1.0", "end")
-        self.motif_listbox.delete(0, "end")
 
         # wstaw podgląd sekwencji
         for k, v in self.sequences.items():
             self.preview_box.insert("end", f">{k}\n{v}\n\n")
 
-        # wstaw motywy
-        for m in self.motifs:
-            self.motif_listbox.insert("end", m)
+        # automatycznie przelicz analizę
+        self.run_analysis()
 
         self.log("Załadowano dane testowe (DEV_MODE)")
 
