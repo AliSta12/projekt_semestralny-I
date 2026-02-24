@@ -275,9 +275,27 @@ class DNAApp(tk.Tk):
         - pasek statusu (na samym dole)
         """
 
-        # --- GÓRNA CZĘŚĆ (tabs) ---
+        # ==================================================
+        # UKŁAD: 2 WIERSZE (GRID) -> dół zawsze widoczny
+        # ==================================================
+
+        # kasujemy ustawienia pack/grid z root (bezpieczne przy restartach layoutu)
+        for w in self.winfo_children():
+            w.pack_forget()
+            w.grid_forget()
+
+        self.grid_rowconfigure(0, weight=1)  # zakładki rosną
+        self.grid_rowconfigure(1, weight=0)  # dół ma stałe miejsce
+        self.grid_columnconfigure(0, weight=1)
+
+        # --- GÓRA: zakładki ---
         main_frame = tk.Frame(self)
-        main_frame.pack(side="top", fill="both", expand=True)
+        main_frame.grid(row=0, column=0, sticky="nsew")
+
+        # --- DÓŁ: logi + status (STAŁA wysokość) ---
+        bottom_frame = tk.Frame(self, height=140)
+        bottom_frame.grid(row=1, column=0, sticky="ew")
+        bottom_frame.grid_propagate(False)  # nie pozwól, żeby dół się “zwinął”
 
         # ==================================================
         # PRAWA CZĘŚĆ Z ZAKŁADKAMI
@@ -390,25 +408,8 @@ class DNAApp(tk.Tk):
         )
         self.close_barplot_btn.pack_forget()
 
-        # ==================================================
-        # DOLNY PANEL: LOGI + STATUS BAR
-        # ==================================================
-
-        # kontener dolny
-        bottom_frame = tk.Frame(self)
-        bottom_frame.pack(side="bottom", fill="x")
-
-        # --- LOGI ---
-        self.log_box = tk.Text(
-            bottom_frame,
-            height=6,          # stała wysokość
-            bg="#f5f5f5"
-        )
-        self.log_box.pack(fill="x", padx=5, pady=(5, 0))
-
-        # --- STATUS BAR ---
+        # --- STATUS BAR (zawsze na dole) ---
         self.status_var = tk.StringVar(value="Gotowe")
-
         status_bar = tk.Label(
             bottom_frame,
             textvariable=self.status_var,
@@ -416,7 +417,16 @@ class DNAApp(tk.Tk):
             relief="sunken",
             anchor="w"
         )
-        status_bar.pack(fill="x")
+        status_bar.pack(side="bottom", fill="x")
+
+        # --- LOGI (nad statusem) ---
+        log_frame = tk.Frame(bottom_frame)
+        log_frame.pack(side="top", fill="both", expand=True)
+
+        tk.Label(log_frame, text="Logi / komunikaty:").pack(anchor="w", padx=6)
+
+        self.log_box = tk.Text(log_frame, height=3)
+        self.log_box.pack(fill="both", expand=True, padx=6, pady=(0, 6))
 
     # ==================================================
     # FUNKCJE POMOCNICZE
