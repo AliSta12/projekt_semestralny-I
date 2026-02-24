@@ -783,6 +783,70 @@ class DNAApp(tk.Tk):
 
         frm_pro.pack_forget()
 
+        # ==================================================
+        # PRZYCISKI AKCJI (bardziej widoczne, spójne)
+        # ==================================================
+        button_frame = tk.Frame(win)
+        button_frame.pack(fill="x", padx=10, pady=(6, 12))
+
+        # lekka "belka" wizualna
+        sep = ttk.Separator(button_frame, orient="horizontal")
+        sep.pack(fill="x", pady=(0, 8))
+
+        btn_row = tk.Frame(button_frame)
+        btn_row.pack(fill="x")
+
+        # --- WYCZYŚĆ MOTYWY ---
+        def clear_motifs():
+            self.motifs.clear()
+
+            # wyczyść listy
+            self.motif_listbox.delete(0, "end")
+            searched_listbox.delete(0, "end")
+
+            # odznacz checkboxy
+            for section in checkbox_vars.values():
+                for var, _ in section:
+                    var.set(False)
+
+            self.log("Wyczyszczono wszystkie motywy")
+
+        btn_clear = tk.Button(
+            btn_row,
+            text="Wyczyść motywy",
+            command=clear_motifs
+        )
+
+        # --- URUCHOM ANALIZĘ ---
+        def run_and_close():
+            win.destroy()
+            self.run_analysis()
+
+        btn_run = tk.Button(
+            btn_row,
+            text="Uruchom analizę",
+            command=run_and_close
+        )
+
+        # spójne parametry wizualne
+        for b in (btn_clear, btn_run):
+            b.configure(
+                padx=14,
+                pady=8,
+                font=self.UI_FONT_BOLD if hasattr(self, "UI_FONT_BOLD") else ("Segoe UI", 10, "bold"),
+                relief="raised",
+                borderwidth=1
+            )
+
+        # delikatny akcent dla "Uruchom analizę" (czytelne, ale nie krzykliwe)
+        btn_run.configure(
+            bg="#e8f0ff",
+            activebackground="#dbe8ff"
+        )
+
+        btn_clear.pack(side="left")
+        btn_run.pack(side="right")
+
     def run_analysis(self):
         """Buduje macierzową tabelę pivot"""
 
