@@ -183,6 +183,26 @@ class DNAApp(tk.Tk):
     def __init__(self):
         super().__init__()
 
+        # ===== WYGLĄD / STYLE (TTK) =====
+        self.style = ttk.Style(self)
+        self.style.theme_use("clam")  # estetyczniejszy od defaultu na Windows
+
+        # Stałe
+        self.UI_FONT = ("Segoe UI", 10)
+        self.UI_FONT_BOLD = ("Segoe UI", 10, "bold")
+        self.UI_H1 = ("Segoe UI", 12, "bold")
+        self.ACCENT = "#0b5394"  # ten granat co już lubisz
+
+        # Ustawienia ogólne stylu
+        self.style.configure(".", font=self.UI_FONT)
+        self.style.configure("TNotebook.Tab", padding=(12, 6))
+        self.style.configure("TLabel", font=self.UI_FONT)
+        self.style.configure("Header.TLabel", font=self.UI_H1, foreground=self.ACCENT)
+
+        # „Karta” – ramka z delikatnym tłem i obramowaniem
+        self.style.configure("Card.TFrame", background="#f7f7f7", borderwidth=1, relief="solid")
+        self.style.configure("CardInner.TFrame", background="#f7f7f7")
+
         self.title("Projekt 1: Analiza motywów sekwencyjnych w DNA")
         self.geometry("1000x600")
 
@@ -196,15 +216,16 @@ class DNAApp(tk.Tk):
         self.sort_state = {}  # zapamiętuje kierunek sortowania kolumn
         self.normalization_mode = tk.StringVar(value="raw")
 
-        self.create_menu()
-        self.create_layout()
-        if self.DEV_MODE:
-            self.load_test_data()
         self.active_label_x = None
         self.active_label_y = None
         self.selected_sequence = None
         self.selected_motif = None
-        self.motif_listbox = None
+
+        self.create_menu()
+        self.create_layout()
+        if self.DEV_MODE:
+            self.load_test_data()
+
 
     # ==================================================
     # MENU GÓRNE
@@ -247,21 +268,27 @@ class DNAApp(tk.Tk):
     def create_layout(self):
         """
         Buduje cały interfejs graficzny:
-        panele, zakładki, tabele, wizualizację i logi
+        - zakładki (preview / wyniki / wizualizacja)
+        - tabela wyników + tryb raw/norm
+        - heatmapa + barplot + przycisk zamykania barplotu
+        - logi (z przewijaniem)
+        - pasek statusu (na samym dole)
         """
 
-        # --- główny kontener ---
+        # --- GÓRNA CZĘŚĆ (tabs) ---
         main_frame = tk.Frame(self)
-        main_frame.pack(fill="both", expand=True)
+        main_frame.pack(side="top", fill="both", expand=True)
 
-        # --- część prawa ---
+        # ==================================================
+        # PRAWA CZĘŚĆ Z ZAKŁADKAMI
+        # ==================================================
         right = tk.Frame(main_frame)
         right.pack(fill="both", expand=True)
 
         self.tabs = ttk.Notebook(right)
         self.tabs.pack(fill="both", expand=True)
 
-        # zakładki
+        # --- zakładki ---
         self.tab_preview = ttk.Frame(self.tabs)
         self.tab_results = ttk.Frame(self.tabs)
         self.tab_viz = ttk.Frame(self.tabs)
@@ -270,22 +297,23 @@ class DNAApp(tk.Tk):
         self.tabs.add(self.tab_results, text="Wyniki analizy")
         self.tabs.add(self.tab_viz, text="Wizualizacja")
 
-        # --- podgląd FASTA ---
+        # ==================================================
+        # PODGLĄD FASTA
+        # ==================================================
         self.preview_box = tk.Text(self.tab_preview)
         self.preview_box.pack(fill="both", expand=True)
 
-        # --- tabela wyników (macierzowa) ---
+        # ==================================================
+        # WYNIKI ANALIZY: RADIOBUTTONY + TABELA
+        # ==================================================
         results_frame = tk.Frame(self.tab_results)
         results_frame.pack(fill="both", expand=True)
 
-        # ===== TRYB WYŚWIETLANIA =====
+        # --- tryb wyświetlania (raw/norm) nad tabelą ---
         mode_frame = tk.Frame(results_frame)
         mode_frame.pack(fill="x", pady=(5, 0))
 
-        tk.Label(
-            mode_frame,
-            text="Tryb wyświetlania:"
-        ).pack(side="left", padx=(5, 5))
+        tk.Label(mode_frame, text="Tryb wyświetlania:").pack(side="left", padx=(5, 5))
 
         tk.Radiobutton(
             mode_frame,
@@ -303,14 +331,11 @@ class DNAApp(tk.Tk):
             command=self.run_analysis
         ).pack(side="left")
 
-        # ===== TABELA =====
-        self.results_table = ttk.Treeview(
-            results_frame,
-            show="headings"
-        )
+        # --- tabela wyników (Treeview) ---
+        self.results_table = ttk.Treeview(results_frame, show="headings")
         self.results_table.pack(fill="both", expand=True)
 
-        # zmiana kursora na rączkę przy najechaniu na nagłówki
+        # --- UX: kursor "rączka" na nagłówkach tabeli (sortowanie) ---
         def on_heading_enter(event):
             region = self.results_table.identify_region(event.x, event.y)
             if region == "heading":
@@ -320,18 +345,17 @@ class DNAApp(tk.Tk):
 
         self.results_table.bind("<Motion>", on_heading_enter)
 
-        # --- wizualizacja ---
+        # ==================================================
+        # WIZUALIZACJA: RADIOBUTTONY NAD HEATMAPĄ + HEATMAPA + BARPLOT
+        # ==================================================
         self.viz_frame = tk.Frame(self.tab_viz)
         self.viz_frame.pack(fill="both", expand=True)
 
-        # Panel sterowania (musi być w viz_frame!)
+        # --- panel sterowania (MUSI być w viz_frame, żeby był na górze zakładki) ---
         viz_controls = tk.Frame(self.viz_frame)
         viz_controls.pack(fill="x", pady=(5, 0))
 
-        tk.Label(
-            viz_controls,
-            text="Tryb wyświetlania:"
-        ).pack(side="left", padx=(10, 5))
+        tk.Label(viz_controls, text="Tryb wyświetlania:").pack(side="left", padx=(10, 5))
 
         tk.Radiobutton(
             viz_controls,
@@ -349,42 +373,73 @@ class DNAApp(tk.Tk):
             command=self.refresh_visualization
         ).pack(side="left")
 
-        # Górna część – heatmapa
+        # --- górna część: heatmapa ---
         self.viz_top = tk.Frame(self.viz_frame)
         self.viz_top.pack(fill="both", expand=True)
 
-        # Dolna część – barplot
+        # --- dolna część: barplot (stała wysokość, żeby heatmapa nie znikała) ---
         self.viz_bottom = tk.Frame(self.viz_frame, height=260)
         self.viz_bottom.pack(fill="x")
         self.viz_bottom.pack_propagate(False)
 
-        # Przycisk zamykania barplotu
+        # --- przycisk zamykania barplotu (ukryty na starcie) ---
         self.close_barplot_btn = tk.Button(
             self.viz_frame,
             text="✖ Zamknij wykres",
             command=self.hide_barplot
         )
-
-        # Na start przycisk ukryty (bo nie ma jeszcze wykresu)
         self.close_barplot_btn.pack_forget()
 
-        # --- pasek statusu ---
+        # ==================================================
+        # DOLNY PANEL: LOGI + STATUS BAR
+        # ==================================================
+
+        # kontener dolny
+        bottom_frame = tk.Frame(self)
+        bottom_frame.pack(side="bottom", fill="x")
+
+        # --- LOGI ---
+        self.log_box = tk.Text(
+            bottom_frame,
+            height=6,          # stała wysokość
+            bg="#f5f5f5"
+        )
+        self.log_box.pack(fill="x", padx=5, pady=(5, 0))
+
+        # --- STATUS BAR ---
         self.status_var = tk.StringVar(value="Gotowe")
+
         status_bar = tk.Label(
-            self,
+            bottom_frame,
             textvariable=self.status_var,
             bd=1,
             relief="sunken",
             anchor="w"
         )
-        status_bar.pack(side="bottom", fill="x")
+        status_bar.pack(fill="x")
 
     # ==================================================
     # FUNKCJE POMOCNICZE
     # ==================================================
 
     def log(self, message):
+        """
+        Dodaje komunikat do okna logów
+        oraz aktualizuje pasek statusu.
+        """
+
+        # wpis do okna logów
+        self.log_box.insert("end", message + "\n")
+        self.log_box.see("end")  # auto-scroll na dół
+
+        # wpis do status bara
         self.status_var.set(message)
+
+    def update_status(self):
+        seq_n = len(self.sequences) if self.sequences else 0
+        mot_n = len(self.motifs) if self.motifs else 0
+        mode = "Surowe" if self.normalization_mode.get() == "raw" else "Na 1000 nt"
+        self.status_var.set(f"✔ Sekwencje: {seq_n} | Motywy: {mot_n} | Tryb: {mode}")
 
     def refresh_csv_files(self):
         """Odświeża listę plików CSV w zakładce Eksport"""
@@ -424,6 +479,7 @@ class DNAApp(tk.Tk):
         self.run_analysis()
 
         self.log("Załadowano dane testowe (DEV_MODE)")
+        self.update_status()
 
     # ==================================================
     # AKCJE UŻYTKOWNIKA
@@ -455,6 +511,7 @@ class DNAApp(tk.Tk):
                 self.preview_box.insert("end", f">{k}\n{v[:200]}...\n\n")
 
             self.log(f"Wczytano plik: {path}")
+            self.update_status()
 
         except Exception as e:
             messagebox.showerror("Błąd FASTA", str(e))
@@ -761,6 +818,7 @@ class DNAApp(tk.Tk):
 
         self.log("Analiza zakończona")
         self.draw_visualization()
+        self.update_status()
 
     def sort_column(self, col):
         """Sortowanie kolumny + strzałki w nagłówkach"""
@@ -1063,6 +1121,9 @@ class DNAApp(tk.Tk):
         for w in self.viz_bottom.winfo_children():
             w.destroy()
 
+        self.viz_bottom.configure(height=260)
+        self.viz_bottom.pack_propagate(False)
+
         # Osadzamy wykres w Tkinter
         canvas = FigureCanvasTkAgg(fig, master=self.viz_bottom)
         canvas.draw()
@@ -1129,14 +1190,16 @@ class DNAApp(tk.Tk):
         fig.tight_layout(rect=[0, 0, 1, 0.92])
         fig.subplots_adjust(bottom=0.30)
 
+        self.viz_bottom.configure(height=260)
+        self.viz_bottom.pack_propagate(False)
+
         canvas = FigureCanvasTkAgg(fig, master=self.viz_bottom)
         canvas.draw()
 
         canvas_widget = canvas.get_tk_widget()
         canvas_widget.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # pokaż panel i przycisk
-        self.viz_bottom.pack(fill="x")
+        # pokaż przycisk (panel zostaje w layoucie cały czas)
         self.close_barplot_btn.pack(pady=(5, 0))
 
     def on_hover(self, event):
@@ -1182,39 +1245,43 @@ class DNAApp(tk.Tk):
         if hasattr(self, "selected_motif") and self.selected_motif:
             self.draw_barplot_motif()
 
+        self.update_status()
+
     def hide_barplot(self):
         """
-        Ukrywa panel wykresu słupkowego
-        i resetuje zaznaczenia etykiet.
+        Ukrywa wykres słupkowy (czyści zawartość),
+        resetuje zaznaczenia etykiet.
         """
 
-        # wyczyść dolny panel
+        # 1) wyczyść dolny panel
         for w in self.viz_bottom.winfo_children():
             w.destroy()
 
-        # ukryj panel
-        self.viz_bottom.pack_forget()
+        # 2) ZAMIANA KLUCZOWA:
+        #    NIE pack_forget() -> zostawiamy viz_bottom w layoucie
+        #    żeby nie rozjeżdżało układu (logi/status).
+        self.viz_bottom.configure(height=0)
+        self.viz_bottom.pack_propagate(False)
 
-        # ukryj przycisk
+        # 3) ukryj przycisk
         self.close_barplot_btn.pack_forget()
 
-        # reset podświetlenia etykiet X
-        if hasattr(self, "active_label_x") and self.active_label_x:
+        # 4) reset podświetleń etykiet
+        if getattr(self, "active_label_x", None):
             self.active_label_x.set_color("black")
             self.active_label_x.set_fontweight("normal")
             self.active_label_x = None
 
-        # reset podświetlenia etykiet Y
-        if hasattr(self, "active_label_y") and self.active_label_y:
+        if getattr(self, "active_label_y", None):
             self.active_label_y.set_color("black")
             self.active_label_y.set_fontweight("normal")
             self.active_label_y = None
 
-        # reset wyboru
+        # 5) reset wyboru
         self.selected_sequence = None
         self.selected_motif = None
 
-        # odśwież canvas (żeby zmiana koloru była widoczna)
+        # 6) odśwież canvas (żeby zmiana koloru była widoczna)
         if hasattr(self, "current_canvas"):
             self.current_canvas.draw_idle()
 
