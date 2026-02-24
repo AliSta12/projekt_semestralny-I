@@ -210,7 +210,7 @@ class DNAApp(tk.Tk):
         self.sequences = {}
         self.current_fasta = None
         self.motifs = []
-        self.DEV_MODE = True  # <-- zmień na False gdy niepotrzebne
+        self.DEV_MODE = False  # <-- zmień na False gdy niepotrzebne
 
         # budowa interfejsu
         self.sort_state = {}  # zapamiętuje kierunek sortowania kolumn
@@ -784,23 +784,21 @@ class DNAApp(tk.Tk):
         frm_pro.pack_forget()
 
         # ==================================================
-        # PRZYCISKI AKCJI (bardziej widoczne, spójne)
+        # PRZYCISKI AKCJI (bez skrótów)
         # ==================================================
         button_frame = tk.Frame(win)
         button_frame.pack(fill="x", padx=10, pady=(6, 12))
 
-        # lekka "belka" wizualna
-        sep = ttk.Separator(button_frame, orient="horizontal")
-        sep.pack(fill="x", pady=(0, 8))
+        ttk.Separator(button_frame, orient="horizontal").pack(fill="x", pady=(0, 8))
 
         btn_row = tk.Frame(button_frame)
         btn_row.pack(fill="x")
 
-        # --- WYCZYŚĆ MOTYWY ---
         def clear_motifs():
+            # wyczyść dane
             self.motifs.clear()
 
-            # wyczyść listy
+            # wyczyść listy w GUI
             self.motif_listbox.delete(0, "end")
             searched_listbox.delete(0, "end")
 
@@ -811,38 +809,19 @@ class DNAApp(tk.Tk):
 
             self.log("Wyczyszczono wszystkie motywy")
 
-        btn_clear = tk.Button(
-            btn_row,
-            text="Wyczyść motywy",
-            command=clear_motifs
-        )
-
-        # --- URUCHOM ANALIZĘ ---
         def run_and_close():
             win.destroy()
             self.run_analysis()
 
-        btn_run = tk.Button(
-            btn_row,
-            text="Uruchom analizę",
-            command=run_and_close
-        )
+        btn_clear = tk.Button(btn_row, text="Wyczyść motywy", command=clear_motifs)
+        btn_run = tk.Button(btn_row, text="Uruchom analizę", command=run_and_close)
 
-        # spójne parametry wizualne
+        # trochę większe i spójne wizualnie
         for b in (btn_clear, btn_run):
-            b.configure(
-                padx=14,
-                pady=8,
-                font=self.UI_FONT_BOLD if hasattr(self, "UI_FONT_BOLD") else ("Segoe UI", 10, "bold"),
-                relief="raised",
-                borderwidth=1
-            )
+            b.configure(padx=14, pady=8, relief="raised", borderwidth=1)
 
-        # delikatny akcent dla "Uruchom analizę" (czytelne, ale nie krzykliwe)
-        btn_run.configure(
-            bg="#e8f0ff",
-            activebackground="#dbe8ff"
-        )
+        # delikatne wyróżnienie "Uruchom analizę"
+        btn_run.configure(bg="#e8f0ff", activebackground="#dbe8ff")
 
         btn_clear.pack(side="left")
         btn_run.pack(side="right")
