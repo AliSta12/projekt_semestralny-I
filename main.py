@@ -210,7 +210,7 @@ class DNAApp(tk.Tk):
         self.sequences = {}
         self.current_fasta = None
         self.motifs = []
-        self.DEV_MODE = False  # <-- zmień na False gdy niepotrzebne
+        self.DEV_MODE = True  # <-- zmień na False gdy niepotrzebne
 
         # budowa interfejsu
         self.sort_state = {}  # zapamiętuje kierunek sortowania kolumn
@@ -242,7 +242,7 @@ class DNAApp(tk.Tk):
         plik.add_command(label="Wyjście", command=self.quit)
 
         motywy = tk.Menu(menubar, tearoff=0)
-        motywy.add_command(label="Dodaj / usuń motywy", command=self.open_motif_manager)
+        motywy.add_command(label="Dodaj/usuń motywy", command=self.open_motif_manager)
 
         ncbi = tk.Menu(menubar, tearoff=0)
         ncbi.add_command(label="Pobierz z NCBI", command=self.download_ncbi)
@@ -529,27 +529,97 @@ class DNAApp(tk.Tk):
     def open_motif_manager(self):
         """
         Okno do zarządzania motywami:
-        - wpisywanie własnego
-        - lista szukanych
-        - akordeon z predefiniowanymi
+        - dodawanie ręczne (Enter + przycisk)
+        - lista aktualnych motywów z usuwaniem
+        - import / eksport / wyczyść
+        - akordeon (opcjonalne motywy referencyjne) z checkboxami
+        - okno automatycznie dopasowuje wysokość do zawartości (żeby nic nie ucinać)
         """
 
-        win = tk.Toplevel(self)
-        win.title("Dodaj/usuń motywy")
-        # Ustal stałą szerokość, dynamiczną wysokość
-        initial_width = 380
+        import tkinter as tk
+        from tkinter import ttk, filedialog, messagebox
+        from pathlib import Path
 
-        win.geometry(f"{initial_width}x500")
-        win.resizable(False, True)
+        # ===== Helpers =====
+        IUPAC_ALLOWED = set(getattr(self, "IUPAC_MAP", {}).keys()) if hasattr(self, "IUPAC_MAP") else set(
+            "ACGTURYSWKMBDHVN")
+
+        def normalize_motif(s: str) -> str:
+            return "".join(s.split()).upper()
+
+        def validate_motif(m: str) -> tuple[bool, str]:
+            if not m:
+                return False, "Motyw jest pusty."
+            bad = sorted({ch for ch in m if ch not in IUPAC_ALLOWED})
+            if bad:
+                return False, f"Nieprawidłowe znaki: {', '.join(bad)}.\nDozwolone: {''.join(sorted(IUPAC_ALLOWED))}"
+            if len(m) < 2:
+                return False, "Motyw jest za krótki (min. 2 znaki)."
+            return True, ""
+
+        def unique_preserve_order(items: list[str]) -> list[str]:
+            seen = set()
+            out = []
+            for x in items:
+                if x not in seen:
+                    seen.add(x)
+                    out.append(x)
+            return out
+
+        def pl_motyw(n: int) -> str:
+            # 1 motyw, 2-4 motywy, 5+ motywów; wyjątek 12-14 motywów
+            if n == 1:
+                return "motyw"
+            if 12 <= (n % 100) <= 14:
+                return "motywów"
+            if 2 <= (n % 10) <= 4:
+                return "motywy"
+            return "motywów"
+
+        def sync_to_main_listbox():
+            if hasattr(self, "motif_listbox") and self.motif_listbox:
+                try:
+                    self.motif_listbox.delete(0, "end")
+                    for m in self.motifs:
+                        self.motif_listbox.insert("end", m)
+                except Exception:
+                    pass
+
+        # ===== Window =====
+        win = tk.Toplevel(self)
+        win.title("Motywy")
         win.transient(self)
         win.grab_set()
+        win.resizable(False, True)  # stała szerokość, wysokość dopasowujemy
 
-        # ===== LEGENDA =====
-        tk.Label(win, text="Dozwolone symbole:").pack(pady=(6, 0))
-        tk.Label(win, text="A  C  G  T").pack()
+        initial_width = 460
+        win.geometry(f"{initial_width}x520")
 
-        iupac_label = tk.Label(win, text="R Y S W K M B D H V N (IUPAC)", fg="blue")
-        iupac_label.pack(pady=(0, 8))
+        # autosize: dopasuj wysokość do reqheight (z limitem ekranu)
+        def autosize():
+            win.update_idletasks()
+            req_h = win.winfo_reqheight()
+            screen_h = win.winfo_screenheight()
+            max_h = max(360, screen_h - 120)
+            new_h = min(req_h, max_h)
+            win.geometry(f"{initial_width}x{new_h}")
+
+        def on_close():
+            # nie czyścimy motywów przy zamknięciu okna (Twoje wymaganie)
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", on_close)
+
+        # ===== Layout root =====
+        root = ttk.Frame(win, padding=10)
+        root.pack(fill="both", expand=True)
+        root.columnconfigure(0, weight=1)
+        root.rowconfigure(5, weight=1)  # lista motywów rośnie
+
+        # ===== Legenda + tooltip =====
+        iupac_text = "A C G T + IUPAC (R Y S W K M B D H V N)"
+        iupac_lbl = ttk.Label(root, text=iupac_text, foreground="#0b5394")
+        iupac_lbl.grid(row=1, column=0, sticky="w", pady=(0, 6))
 
         tooltip_text = (
             "R = A lub G\n"
@@ -567,65 +637,242 @@ class DNAApp(tk.Tk):
 
         tooltip = None
 
-        def show_tooltip(e):
+        top_row = ttk.Frame(root)
+        top_row.grid(row=0, column=0, sticky="ew", pady=(0, 2))
+        top_row.columnconfigure(0, weight=1)
+
+        ttk.Label(top_row, text="Dozwolone symbole:", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w")
+
+        btn_run = ttk.Button(top_row, text="Uruchom analizę", command=self.run_analysis)
+        btn_run.grid(row=0, column=1, sticky="e")
+
+        def run_and_close():
+            # zamknij okno motywów
+            try:
+                win.destroy()
+            except Exception:
+                pass
+
+            # przełącz na wyniki
+            try:
+                self.tabs.select(self.tab_results)
+            except Exception:
+                pass
+
+            # uruchom analizę po chwili, żeby UI zdążyło się przełączyć
+            self.after(50, self.run_analysis)
+
+        btn_run.configure(command=run_and_close)
+
+        def show_tooltip(event):
             nonlocal tooltip
-            if tooltip: return
-            x, y = e.x_root + 10, e.y_root + 10
+            if tooltip:
+                return
+            x, y = event.x_root + 12, event.y_root + 12
             tooltip = tk.Toplevel(win)
             tooltip.wm_overrideredirect(True)
             tooltip.geometry(f"+{x}+{y}")
             tk.Label(
-                tooltip, text=tooltip_text,
-                justify="left", bg="#ffffe0",
-                relief="solid", borderwidth=1,
-                padx=4, pady=2
+                tooltip, text=tooltip_text, justify="left", bg="#ffffe0",
+                relief="solid", borderwidth=1, padx=6, pady=4
             ).pack()
 
-        def hide_tooltip(e):
+        def hide_tooltip(event):
             nonlocal tooltip
             if tooltip:
                 tooltip.destroy()
                 tooltip = None
 
-        iupac_label.bind("<Enter>", show_tooltip)
-        iupac_label.bind("<Leave>", hide_tooltip)
+        iupac_lbl.bind("<Enter>", show_tooltip)
+        iupac_lbl.bind("<Leave>", hide_tooltip)
 
-        # ===== Własny motyw =====
-        tk.Label(win, text="Wpisz swój motyw:", anchor="w").pack(fill="x", padx=10)
-        motif_entry = tk.Entry(win)
-        motif_entry.pack(fill="x", padx=10, pady=(2, 6))
+        # ===== Add motif =====
+        ttk.Label(root, text="Dodaj motyw:", font=("Segoe UI", 9, "bold")).grid(row=2, column=0, sticky="w",
+                                                                                pady=(4, 2))
+        add_row = ttk.Frame(root)
+        add_row.grid(row=3, column=0, sticky="ew")
+        add_row.columnconfigure(0, weight=1)
 
-        def add_manual(event):
-            m = motif_entry.get().strip().upper()
-            if not m:
+        motif_entry = ttk.Entry(add_row)
+        motif_entry.grid(row=0, column=0, sticky="ew")
+
+        # ===== Motifs list =====
+        ttk.Label(root, text="Aktualne motywy:", font=("Segoe UI", 9, "bold")).grid(row=4, column=0, sticky="w",
+                                                                                    pady=(10, 2))
+
+        list_frame = ttk.Frame(root)
+        list_frame.grid(row=5, column=0, sticky="nsew")
+        list_frame.columnconfigure(0, weight=1)
+        list_frame.rowconfigure(0, weight=1)
+
+        motifs_lb = tk.Listbox(list_frame, selectmode="extended", height=8, activestyle="none")
+        motifs_lb.grid(row=0, column=0, sticky="nsew")
+        scroll = ttk.Scrollbar(list_frame, orient="vertical", command=motifs_lb.yview)
+        scroll.grid(row=0, column=1, sticky="ns")
+        motifs_lb.configure(yscrollcommand=scroll.set)
+
+        # ===== Actions (przyciski + licznik w osobnym wierszu) =====
+        actions = ttk.Frame(root)
+        actions.grid(row=6, column=0, sticky="ew", pady=(10, 6))
+        for c in range(4):
+            actions.columnconfigure(c, weight=1)
+
+        badge_var = tk.StringVar(value="0 motywów")
+        badge = ttk.Label(actions, textvariable=badge_var, anchor="e")
+        badge.grid(row=1, column=0, columnspan=4, sticky="e", pady=(6, 0))
+
+        # ---- state/refresh ----
+        def refresh_lists():
+            motifs_lb.delete(0, "end")
+            for m in self.motifs:
+                motifs_lb.insert("end", m)
+
+            n = len(self.motifs)
+            badge_var.set(f"{n} {pl_motyw(n)}")
+
+            has_any = bool(self.motifs)
+            btn_export.configure(state=("normal" if has_any else "disabled"))
+            btn_clear.configure(state=("normal" if has_any else "disabled"))
+
+            # stan "usuń" zależy od selekcji
+            btn_remove.configure(state=("normal" if motifs_lb.curselection() else "disabled"))
+
+            sync_to_main_listbox()
+
+            # przycisk analizy w oknie motywów
+            btn_run.configure(state=("normal" if (self.sequences and self.motifs) else "disabled"))
+
+            autosize()
+
+        def add_motif(m: str):
+            m = normalize_motif(m)
+            ok, reason = validate_motif(m)
+            if not ok:
+                messagebox.showwarning("Nieprawidłowy motyw", reason, parent=win)
                 return
-            if any(c not in IUPAC_MAP for c in m):
-                messagebox.showerror("Błąd", "Motyw może zawierać tylko symbole ACGT lub IUPAC")
-                return
+
             if m in self.motifs:
-                messagebox.showinfo("Info", "Taki motyw już istnieje")
+                self.log(f"Motyw już istnieje: {m}")
+                motif_entry.delete(0, "end")
                 return
+
             self.motifs.append(m)
-            self.motif_listbox.insert("end", m)
-            searched_listbox.insert("end", m)
+            self.motifs = unique_preserve_order(self.motifs)
             motif_entry.delete(0, "end")
             self.log(f"Dodano motyw: {m}")
+            refresh_lists()
+            refresh_accordion_checks()
 
-        motif_entry.bind("<Return>", add_manual)
+        def remove_selected():
+            sel = motifs_lb.curselection()
+            if not sel:
+                return
+            indices = sorted(sel, reverse=True)
+            removed = []
+            for idx in indices:
+                try:
+                    removed.append(self.motifs.pop(idx))
+                except Exception:
+                    pass
+            if removed:
+                self.log(f"Usunięto: {', '.join(removed)}")
+            refresh_lists()
+            refresh_accordion_checks()
 
-        # ===== Szukane motywy =====
-        tk.Label(win, text="Szukane motywy:", anchor="w").pack(fill="x", padx=10)
-        searched_listbox = tk.Listbox(win, selectmode="extended")
-        searched_listbox.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+        def clear_all():
+            if not self.motifs:
+                return
+            if not messagebox.askyesno("Wyczyścić motywy?", "Na pewno usunąć wszystkie motywy?", parent=win):
+                return
+            self.motifs.clear()
+            self.log("Wyczyszczono wszystkie motywy.")
+            refresh_lists()
+            refresh_accordion_checks()
 
-        # ===== Akordeon =====
-        tk.Label(win, text="Wybierz z listy motywów:", anchor="w").pack(
-            fill="x", padx=10, pady=(4, 6)
+        def import_motifs():
+            path = filedialog.askopenfilename(
+                parent=win,
+                title="Import motywów",
+                filetypes=[("Tekst", "*.txt"), ("CSV", "*.csv"), ("Wszystkie", "*.*")]
+            )
+            if not path:
+                return
+            p = Path(path)
+            text = p.read_text(encoding="utf-8", errors="ignore")
+
+            tokens: list[str] = []
+            for line in text.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                for part in line.replace(";", ",").replace("\t", ",").split(","):
+                    part = part.strip()
+                    if part:
+                        tokens.append(part)
+
+            before = len(self.motifs)
+            added = 0
+            for t in tokens:
+                m = normalize_motif(t)
+                ok, _ = validate_motif(m)
+                if ok and m not in self.motifs:
+                    self.motifs.append(m)
+                    added += 1
+
+            self.motifs = unique_preserve_order(self.motifs)
+            self.log(f"Import: {p.name} (dodano {added}, było {before}, jest {len(self.motifs)})")
+            refresh_lists()
+            refresh_accordion_checks()
+
+        def export_motifs():
+            path = filedialog.asksaveasfilename(
+                parent=win,
+                title="Eksport motywów",
+                defaultextension=".txt",
+                filetypes=[("Tekst", "*.txt"), ("CSV", "*.csv")]
+            )
+            if not path:
+                return
+            p = Path(path)
+            if p.suffix.lower() == ".csv":
+                content = "motif\n" + "\n".join(self.motifs) + "\n"
+            else:
+                content = "\n".join(self.motifs) + "\n"
+            p.write_text(content, encoding="utf-8")
+            self.log(f"Eksport: {p.name} ({len(self.motifs)} {pl_motyw(len(self.motifs))})")
+
+        # ===== Podpinanie akcji do widgetów (po definicjach funkcji!) =====
+        motif_entry.bind("<Return>", lambda e: add_motif(motif_entry.get()))
+
+        btn_add = ttk.Button(add_row, text="Dodaj", command=lambda: add_motif(motif_entry.get()))
+        btn_add.grid(row=0, column=1, padx=(8, 0))
+
+        btn_remove = ttk.Button(actions, text="Usuń zaznaczone", command=remove_selected)
+        btn_remove.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+
+        btn_clear = ttk.Button(actions, text="Wyczyść motywy", command=clear_all)
+        btn_clear.grid(row=0, column=1, sticky="ew", padx=(0, 6))
+
+        btn_import = ttk.Button(actions, text="Import", command=import_motifs)
+        btn_import.grid(row=0, column=2, sticky="ew", padx=(0, 6))
+
+        btn_export = ttk.Button(actions, text="Eksport", command=export_motifs)
+        btn_export.grid(row=0, column=3, sticky="ew")
+
+        def on_list_select(event=None):
+            btn_remove.configure(state=("normal" if motifs_lb.curselection() else "disabled"))
+
+        motifs_lb.bind("<<ListboxSelect>>", on_list_select)
+
+        # ===== Accordion =====
+        ttk.Separator(root).grid(row=7, column=0, sticky="ew", pady=(8, 8))
+        ttk.Label(root, text="Motywy referencyjne (opcjonalnie):", font=("Segoe UI", 9, "bold")).grid(
+            row=8, column=0, sticky="w"
         )
 
-        # kontener akordeonu
-        accordion_container = tk.Frame(win)
-        accordion_container.pack(fill="x", padx=10, pady=(0, 6))
+        accordion_container = ttk.Frame(root)
+        accordion_container.grid(row=9, column=0, sticky="ew", pady=(6, 0))
+        accordion_container.columnconfigure(0, weight=1)
 
         EU_MOTIFS = [
             ("ATG", "start kodon"),
@@ -655,176 +902,83 @@ class DNAApp(tk.Tk):
             ("AATGAG", "trp operator"),
         ]
 
-        accordion_frames = {}
-        icons = {
+        accordion_frames: dict[str, ttk.Frame] = {}
+        icon_vars = {
             "Eukariota": tk.StringVar(value="▸  Eukariota"),
             "Prokariota": tk.StringVar(value="▸  Prokariota"),
         }
-        checkbox_vars = {}
+        section_vars: dict[str, list[tk.BooleanVar]] = {"Eukariota": [], "Prokariota": []}
 
-        def toggle_section(name):
-            # jeśli ta sekcja już jest widoczna → chowaj
-            if accordion_frames[name].winfo_ismapped():
-                accordion_frames[name].pack_forget()
-                icons[name].set(f"▸  {name}")
-
-                win.update_idletasks()
-                h = win.winfo_reqheight()
-                win.geometry(f"{initial_width}x{h}")
+        def toggle_section(name: str):
+            frm = accordion_frames[name]
+            if frm.winfo_ismapped():
+                frm.grid_remove()
+                icon_vars[name].set(f"▸  {name}")
+                autosize()
                 return
 
-            # chowamy wszystkie i reset ikon
-            for nm, frame in accordion_frames.items():
-                frame.pack_forget()
-                icons[nm].set(f"▸  {nm}")
+            for nm, fr in accordion_frames.items():
+                fr.grid_remove()
+                icon_vars[nm].set(f"▸  {nm}")
 
-            # pokaz sekcję
-            accordion_frames[name].pack(fill="x", padx=20, pady=(2, 6))
-            icons[name].set(f"▾  {name}")
+            frm.grid()
+            icon_vars[name].set(f"▾  {name}")
+            autosize()
 
-            win.update_idletasks()
-            h = win.winfo_reqheight()
-            win.geometry(f"{initial_width}x{h}")
+        def on_toggle_motif(seq: str, checked: bool):
+            if checked:
+                if seq not in self.motifs:
+                    self.motifs.append(seq)
+                    self.motifs = unique_preserve_order(self.motifs)
+                    self.log(f"Dodano motyw: {seq}")
+            else:
+                if seq in self.motifs:
+                    self.motifs = [m for m in self.motifs if m != seq]
+                    self.log(f"Usunięto motyw: {seq}")
+            refresh_lists()
+            refresh_accordion_checks()
 
-        # — Eukariota — #
-        btn_euk = tk.Button(
-            accordion_container,
-            textvariable=icons["Eukariota"],
-            anchor="w",
-            fg="#0b5394",
-            font=("Arial", 10, "bold"),
-            relief="flat",
-            command=lambda: toggle_section("Eukariota")
-        )
-        btn_euk.pack(fill="x")
-
-        frm_euk = tk.Frame(accordion_container)
-        accordion_frames["Eukariota"] = frm_euk
-        checkbox_vars["Eukariota"] = []
-
-        for seq, desc in EU_MOTIFS:
-            var = tk.BooleanVar(master=win, value=(seq in self.motifs))
-
-            def on_check(v=var, s=seq):
-                if v.get():
-                    if s not in self.motifs:
-                        self.motifs.append(s)
-                        self.motif_listbox.insert("end", s)
-                        searched_listbox.insert("end", s)
-                else:
-                    if s in self.motifs:
-                        self.motifs.remove(s)
-                        try:
-                            idx_main = self.motifs.index(s)
-                            self.motif_listbox.delete(idx_main)
-                        except ValueError:
-                            pass
-                    items = list(searched_listbox.get(0, "end"))
-                    if s in items:
-                        searched_listbox.delete(items.index(s))
-
-            cb = tk.Checkbutton(
-                frm_euk,
-                text=f"{seq} — {desc}",
-                variable=var,
-                command=on_check
+        def build_section(row: int, name: str, motifs: list[tuple[str, str]]):
+            btn = ttk.Button(
+                accordion_container,
+                textvariable=icon_vars[name],
+                command=lambda: toggle_section(name)
             )
-            cb.pack(anchor="w")
-            checkbox_vars["Eukariota"].append((var, seq))
+            btn.grid(row=row, column=0, sticky="ew", pady=(0, 4))
 
-        # chowamy na start
-        frm_euk.pack_forget()
+            frm = ttk.Frame(accordion_container)
+            frm.grid(row=row + 1, column=0, sticky="ew")
+            frm.grid_remove()
+            accordion_frames[name] = frm
 
-        # — Prokariota — #
-        btn_pro = tk.Button(
-            accordion_container,
-            textvariable=icons["Prokariota"],
-            anchor="w",
-            fg="#0b5394",
-            font=("Arial", 10, "bold"),
-            relief="flat",
-            command=lambda: toggle_section("Prokariota")
-        )
-        btn_pro.pack(fill="x", pady=(4, 0))
+            for seq, desc in motifs:
+                var = tk.BooleanVar(master=win, value=(seq in self.motifs))
+                section_vars[name].append(var)
+                cb = ttk.Checkbutton(
+                    frm,
+                    text=f"{seq} — {desc}",
+                    variable=var,
+                    command=lambda s=seq, v=var: on_toggle_motif(s, v.get())
+                )
+                cb.pack(anchor="w")
 
-        frm_pro = tk.Frame(accordion_container)
-        accordion_frames["Prokariota"] = frm_pro
-        checkbox_vars["Prokariota"] = []
+        def refresh_accordion_checks():
+            for name, motifs in [("Eukariota", EU_MOTIFS), ("Prokariota", PRO_MOTIFS)]:
+                vars_list = section_vars[name]
+                for (seq, _), var in zip(motifs, vars_list):
+                    var.set(seq in self.motifs)
 
-        for seq, desc in PRO_MOTIFS:
-            var = tk.BooleanVar(master=win, value=(seq in self.motifs))
+        build_section(0, "Eukariota", EU_MOTIFS)
+        build_section(2, "Prokariota", PRO_MOTIFS)
 
-            def on_check_p(v=var, s=seq):
-                if v.get():
-                    if s not in self.motifs:
-                        self.motifs.append(s)
-                        self.motif_listbox.insert("end", s)
-                        searched_listbox.insert("end", s)
-                else:
-                    if s in self.motifs:
-                        self.motifs.remove(s)
-                        try:
-                            idx_main = self.motifs.index(s)
-                            self.motif_listbox.delete(idx_main)
-                        except ValueError:
-                            pass
-                    items = list(searched_listbox.get(0, "end"))
-                    if s in items:
-                        searched_listbox.delete(items.index(s))
+        # ===== Init =====
+        self.motifs = [normalize_motif(m) for m in getattr(self, "motifs", []) if normalize_motif(m)]
+        self.motifs = unique_preserve_order(self.motifs)
 
-            cb = tk.Checkbutton(
-                frm_pro,
-                text=f"{seq} — {desc}",
-                variable=var,
-                command=on_check_p
-            )
-            cb.pack(anchor="w")
-            checkbox_vars["Prokariota"].append((var, seq))
-
-        frm_pro.pack_forget()
-
-        # ==================================================
-        # PRZYCISKI AKCJI (bez skrótów)
-        # ==================================================
-        button_frame = tk.Frame(win)
-        button_frame.pack(fill="x", padx=10, pady=(6, 12))
-
-        ttk.Separator(button_frame, orient="horizontal").pack(fill="x", pady=(0, 8))
-
-        btn_row = tk.Frame(button_frame)
-        btn_row.pack(fill="x")
-
-        def clear_motifs():
-            # wyczyść dane
-            self.motifs.clear()
-
-            # wyczyść listy w GUI
-            self.motif_listbox.delete(0, "end")
-            searched_listbox.delete(0, "end")
-
-            # odznacz checkboxy
-            for section in checkbox_vars.values():
-                for var, _ in section:
-                    var.set(False)
-
-            self.log("Wyczyszczono wszystkie motywy")
-
-        def run_and_close():
-            win.destroy()
-            self.run_analysis()
-
-        btn_clear = tk.Button(btn_row, text="Wyczyść motywy", command=clear_motifs)
-        btn_run = tk.Button(btn_row, text="Uruchom analizę", command=run_and_close)
-
-        # trochę większe i spójne wizualnie
-        for b in (btn_clear, btn_run):
-            b.configure(padx=14, pady=8, relief="raised", borderwidth=1)
-
-        # delikatne wyróżnienie "Uruchom analizę"
-        btn_run.configure(bg="#e8f0ff", activebackground="#dbe8ff")
-
-        btn_clear.pack(side="left")
-        btn_run.pack(side="right")
+        refresh_lists()
+        refresh_accordion_checks()
+        on_list_select()
+        autosize()
 
     def run_analysis(self):
         """Buduje macierzową tabelę pivot"""
