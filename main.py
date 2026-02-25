@@ -793,14 +793,65 @@ class DNAApp(tk.Tk):
             path = filedialog.askopenfilename(
                 parent=win,
                 title="Import motywów",
-                filetypes=[("Tekst", "*.txt"), ("CSV", "*.csv"), ("Wszystkie", "*.*")]
+                filetypes=[("CSV", "*.csv"), ("Tekst", "*.txt"), ("Wszystkie", "*.*")]
             )
             if not path:
                 return
+
             p = Path(path)
+
+            # ========================
+            # IMPORT CSV Z WYBOREM KOLUMNY
+            # ========================
+            if p.suffix.lower() == ".csv":
+                import csv
+
+                with p.open(encoding="utf-8", errors="ignore") as f:
+                    reader = csv.DictReader(f)
+                    headers = reader.fieldnames
+
+                    if not headers:
+                        messagebox.showerror("Błąd", "Nie znaleziono nagłówków w pliku CSV.", parent=win)
+                        return
+
+                    # --- okno wyboru kolumny ---
+                    col_win = tk.Toplevel(win)
+                    col_win.title("Wybierz kolumnę z motywami")
+                    col_win.transient(win)
+                    col_win.grab_set()
+                    col_win.resizable(False, False)
+
+                    ttk.Label(col_win, text="Wybierz kolumnę:").pack(padx=10, pady=(10, 4))
+
+                    selected_col = tk.StringVar(value=headers[0])
+                    combo = ttk.Combobox(col_win, values=headers, textvariable=selected_col, state="readonly")
+                    combo.pack(padx=10, pady=4)
+
+                    def confirm_column():
+                        col = selected_col.get()
+                        col_win.destroy()
+
+                        # wczytaj ponownie plik
+                        with p.open(encoding="utf-8", errors="ignore") as f2:
+                            reader2 = csv.DictReader(f2)
+                            tokens = []
+                            for row in reader2:
+                                value = row.get(col)
+                                if value:
+                                    tokens.append(value)
+
+                        add_imported_tokens(tokens)
+
+                    ttk.Button(col_win, text="Importuj", command=confirm_column).pack(pady=(4, 10))
+
+                return
+
+            # ========================
+            # IMPORT TXT (jak wcześniej)
+            # ========================
             text = p.read_text(encoding="utf-8", errors="ignore")
 
-            tokens: list[str] = []
+            tokens = []
             for line in text.splitlines():
                 line = line.strip()
                 if not line:
@@ -810,8 +861,12 @@ class DNAApp(tk.Tk):
                     if part:
                         tokens.append(part)
 
+            add_imported_tokens(tokens)
+
+        def add_imported_tokens(tokens: list[str]):
             before = len(self.motifs)
             added = 0
+
             for t in tokens:
                 m = normalize_motif(t)
                 ok, _ = validate_motif(m)
@@ -820,7 +875,9 @@ class DNAApp(tk.Tk):
                     added += 1
 
             self.motifs = unique_preserve_order(self.motifs)
-            self.log(f"Import: {p.name} (dodano {added}, było {before}, jest {len(self.motifs)})")
+
+            self.log(f"Import CSV/TXT (dodano {added}, było {before}, jest {len(self.motifs)})")
+
             refresh_lists()
             refresh_accordion_checks()
 
