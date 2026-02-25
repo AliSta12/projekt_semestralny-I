@@ -35,124 +35,118 @@ import numpy as np
 
 def load_fasta(path):
     """
-    Wczytuje plik FASTA i zwraca słownik:
-    {ID_sekwencji : sekwencja_DNA}
+    Wczytuje plik FASTA i zwraca słownik {ID: sekwencja}.
+
+    Polityka zgodna z rekomendacją:
+    - FULL IUPAC DNA: A C G T R Y S W K M B D H V N
+    - U -> T
+    - usuwa alignment gapy/placeholdery: '-' i '.'
+    - '?' (nieznana baza) -> 'N'  (zachowuje "dziurę" bez sklejania)
+    - usuwa spacje, taby, cyfry (formatowanie)
+    - inne znaki -> błąd
     """
 
     sequences = {}
     current_id = None
 
-    with open(path, "r") as f:
+    allowed = set("ACGTRYSWKMBDHVN")
+
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
         for line_num, line in enumerate(f, start=1):
             line = line.strip()
-
-            # pomijamy puste linie
             if not line:
                 continue
 
-            # nagłówek FASTA
             if line.startswith(">"):
                 current_id = line[1:].strip()
-
                 if not current_id:
                     raise ValueError(f"Pusty nagłówek w linii {line_num}")
-
                 if current_id in sequences:
                     raise ValueError(f"Duplikat ID: {current_id}")
-
                 sequences[current_id] = ""
+                continue
 
-            # linia sekwencji
-            else:
-                if current_id is None:
-                    raise ValueError("Plik nie zaczyna się od nagłówka FASTA")
+            if current_id is None:
+                raise ValueError("Plik nie zaczyna się od nagłówka FASTA")
 
-                if any(c not in "ACGTacgt" for c in line):
-                    raise ValueError(f"Niepoprawne znaki w linii {line_num}")
+            seq_line = line.upper()
 
-                sequences[current_id] += line.upper()
+            # RNA -> DNA
+            seq_line = seq_line.replace("U", "T")
+
+            # alignment gapy/placeholdery: usuwamy
+            seq_line = seq_line.replace("-", "").replace(".", "")
+
+            # nieznane znaki: mapujemy na N (uczciwsze niż usuwanie)
+            seq_line = seq_line.replace("?", "N")
+
+            # formatowanie: usuwamy
+            seq_line = seq_line.replace(" ", "").replace("\t", "")
+            seq_line = "".join(c for c in seq_line if not c.isdigit())
+
+            bad = {c for c in seq_line if c not in allowed}
+            if bad:
+                raise ValueError(f"Niepoprawne znaki {sorted(bad)} w linii {line_num}")
+
+            sequences[current_id] += seq_line
 
     if not sequences:
         raise ValueError("Nie znaleziono sekwencji")
 
     return sequences
 
-
-def find_motif_positions(sequence, motif):
-    """
-    Zwraca listę pozycji (indeksów),
-    w których dany motyw występuje w sekwencji
-    """
-
-    positions = []
-    start = 0
-
-    while True:
-        pos = sequence.find(motif, start)
-        if pos == -1:
-            break
-
-        positions.append(pos)
-        start = pos + 1
-
-    return positions
-
-
-def count_motif(sequence, motif):
-    """
-    Liczy liczbę wystąpień motywu w sekwencji
-    (z uwzględnieniem nachodzących na siebie motywów)
-    """
-
-    count = 0
-    start = 0
-
-    while True:
-        pos = sequence.find(motif, start)
-        if pos == -1:
-            break
-
-        count += 1
-        start = pos + 1
-
-    return count
 # ==================================================
-# IUPAC – MAPA KODÓW I FUNKCJE DOPASOWANIA
+# IUPAC – MAPA (bitmask) + DOPASOWANIE
 # ==================================================
 
-IUPAC_MAP = {
-    "A": {"A"}, "C": {"C"}, "G": {"G"}, "T": {"T"},
-    "R": {"A", "G"}, "Y": {"C", "T"},
-    "S": {"G", "C"}, "W": {"A", "T"},
-    "K": {"G", "T"}, "M": {"A", "C"},
-    "B": {"C", "G", "T"}, "D": {"A", "G", "T"},
-    "H": {"A", "C", "T"}, "V": {"A", "C", "G"},
-    "N": {"A", "C", "G", "T"},
+_IUPAC_MASK = {
+    "A": 0b0001,
+    "C": 0b0010,
+    "G": 0b0100,
+    "T": 0b1000,
+    "U": 0b1000,
+    "R": 0b0101,
+    "Y": 0b1010,
+    "S": 0b0110,
+    "W": 0b1001,
+    "K": 0b1100,
+    "M": 0b0011,
+    "B": 0b1110,
+    "D": 0b1101,
+    "H": 0b1011,
+    "V": 0b0111,
+    "N": 0b1111,
 }
+
 
 def matches_iupac(seq_char: str, motif_char: str) -> bool:
     """
-    Sprawdza, czy nukleotyd seq_char pasuje
-    do symbolu IUPAC motif_char.
+    Sprawdza, czy znak sekwencji i motywu mają
+    część wspólną w sensie IUPAC.
     """
-    seq_char = seq_char.upper()
-    motif_char = motif_char.upper()
-    return seq_char in IUPAC_MAP.get(motif_char, set())
+    try:
+        return (_IUPAC_MASK[seq_char.upper()] &
+                _IUPAC_MASK[motif_char.upper()]) != 0
+    except KeyError:
+        return False
 
 
 def iupac_find_positions(sequence: str, motif: str) -> list[int]:
     """
-    Znajduje pozycje motywu z IUPAC w sekwencji.
+    Znajduje pozycje motywu (IUPAC vs IUPAC).
     Zwraca listę pozycji (0-based).
     """
+    seq = sequence.upper().replace("U", "T")
+    mot = motif.upper().replace("U", "T")
+
     positions = []
-    L = len(sequence)
-    mL = len(motif)
+    L = len(seq)
+    mL = len(mot)
 
     for i in range(L - mL + 1):
         match = True
         for j in range(mL):
-            if not matches_iupac(sequence[i + j], motif[j]):
+            if not matches_iupac(seq[i + j], mot[j]):
                 match = False
                 break
         if match:
@@ -160,15 +154,49 @@ def iupac_find_positions(sequence: str, motif: str) -> list[int]:
 
     return positions
 
-
 def iupac_count(sequence: str, motif: str) -> int:
     """
-    Liczy liczbę dopasowań motywu IUPAC w sekwencji,
-    z allow overlapping.
+    Liczy wystąpienia motywu w sekwencji z uwzględnieniem IUPAC po obu stronach.
+    Liczy z nakładaniem (overlapping).
     """
-    return len(iupac_find_positions(sequence, motif))
+    if not sequence or not motif:
+        return 0
 
+    seq = sequence.upper().replace("U", "T")
+    mot = motif.upper().replace("U", "T")
 
+    # przygotuj maski; jeśli trafisz na nieznany znak -> błąd (łatwiej debugować)
+    try:
+        seq_masks = [_IUPAC_MASK[ch] for ch in seq]
+        mot_masks = [_IUPAC_MASK[ch] for ch in mot]
+    except KeyError as e:
+        raise ValueError(f"Nieznany symbol IUPAC: {e.args[0]}")
+
+    m = len(mot_masks)
+    n = len(seq_masks)
+    if m > n:
+        return 0
+
+    count = 0
+    for i in range(n - m + 1):
+        ok = True
+        for j in range(m):
+            # pasuje, jeśli zbiory możliwych zasad mają część wspólną
+            if (seq_masks[i + j] & mot_masks[j]) == 0:
+                ok = False
+                break
+        if ok:
+            count += 1
+
+    return count
+
+def find_motif_positions(sequence: str, motif: str) -> list[int]:
+    """Pozycje motywu z obsługą IUPAC (overlap)."""
+    return iupac_find_positions(sequence, motif)
+
+def count_motif(sequence: str, motif: str) -> int:
+    """Liczba wystąpień motywu z obsługą IUPAC (overlap)."""
+    return iupac_count(sequence, motif)
 
 # ==================================================
 # GUI – APLIKACJA TKINTER
@@ -210,7 +238,7 @@ class DNAApp(tk.Tk):
         self.sequences = {}
         self.current_fasta = None
         self.motifs = []
-        self.DEV_MODE = True  # <-- zmień na False gdy niepotrzebne
+        self.DEV_MODE = False  # <-- zmień na False gdy niepotrzebne
 
         # budowa interfejsu
         self.sort_state = {}  # zapamiętuje kierunek sortowania kolumn
@@ -540,9 +568,7 @@ class DNAApp(tk.Tk):
         from tkinter import ttk, filedialog, messagebox
         from pathlib import Path
 
-        # ===== Helpers =====
-        IUPAC_ALLOWED = set(getattr(self, "IUPAC_MAP", {}).keys()) if hasattr(self, "IUPAC_MAP") else set(
-            "ACGTURYSWKMBDHVN")
+        IUPAC_ALLOWED = set("ACGTURYSWKMBDHVN")
 
         def normalize_motif(s: str) -> str:
             return "".join(s.split()).upper()
@@ -1578,8 +1604,144 @@ class DNAApp(tk.Tk):
         self.log(f"Wyeksportowano wyniki do: {path}")
 
     def download_ncbi(self):
-        """Placeholder – pobieranie danych z NCBI"""
-        self.log("NCBI (placeholder)")
+        """Pobierz FASTA z NCBI (E-utilities) i wczytaj do aplikacji."""
+        import tkinter as tk
+        from tkinter import ttk, messagebox, filedialog
+        from urllib.parse import urlencode
+        from urllib.request import urlopen, Request
+        import re
+        from pathlib import Path
+
+        def http_get(url: str) -> str:
+            req = Request(url, headers={"User-Agent": "DNAApp/1.0 (NCBI E-utilities)"})
+            with urlopen(req, timeout=30) as r:
+                return r.read().decode("utf-8", errors="replace")
+
+        def is_accession_like(s: str) -> bool:
+            # liberalnie: bez spacji, tylko znaki typowe dla accession/UID
+            return bool(re.fullmatch(r"[A-Za-z0-9_.]+", s))
+
+        def parse_esearch_ids(xml_text: str) -> list[str]:
+            return re.findall(r"<Id>(\d+)</Id>", xml_text)
+
+        win = tk.Toplevel(self)
+        win.title("Pobierz FASTA z NCBI")
+        win.transient(self)
+        win.grab_set()
+        win.resizable(False, False)
+
+        frm = ttk.Frame(win, padding=12)
+        frm.pack(fill="both", expand=True)
+
+        ttk.Label(frm, text="Wpisz accession/UID (np. NC_000001.11) lub zapytanie (ESearch):",
+                  font=("Segoe UI", 9, "bold")).grid(row=0, column=0, columnspan=3, sticky="w")
+
+        entry = ttk.Entry(frm, width=56)
+        entry.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(4, 8))
+        entry.focus_set()
+
+        ttk.Label(frm, text="Baza:").grid(row=2, column=0, sticky="w")
+        db_var = tk.StringVar(value="nuccore")
+        db = ttk.Combobox(frm, textvariable=db_var, values=["nuccore", "protein"], state="readonly", width=12)
+        db.grid(row=2, column=1, sticky="w", padx=(6, 0))
+
+        ttk.Label(frm, text="Max rekordów (dla zapytania):").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        retmax_var = tk.IntVar(value=20)
+        retmax = ttk.Spinbox(frm, from_=1, to=500, textvariable=retmax_var, width=8)
+        retmax.grid(row=3, column=1, sticky="w", padx=(6, 0), pady=(6, 0))
+
+        status_var = tk.StringVar(value="")
+        ttk.Label(frm, textvariable=status_var).grid(row=4, column=0, columnspan=3, sticky="w", pady=(10, 0))
+
+        frm.columnconfigure(2, weight=1)
+
+        def do_download():
+            q = entry.get().strip()
+            if not q:
+                messagebox.showwarning("Brak danych", "Wpisz accession/UID albo zapytanie.", parent=win)
+                return
+
+            db_name = db_var.get().strip()
+            base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+
+            # 1) ustal listę ID
+            ids: list[str] = []
+            parts = [x for x in re.split(r"[,\s]+", q) if x]
+
+            if parts and all(is_accession_like(x) for x in parts):
+                # traktujemy jako accession/uid listę
+                ids = parts
+            else:
+                # ESearch -> IDs
+                params = {
+                    "db": db_name,
+                    "term": q,
+                    "retmax": int(retmax_var.get()),
+                    "retmode": "xml",
+                }
+                status_var.set("Szukam w NCBI (ESearch)...")
+                win.update_idletasks()
+                xml = http_get(base + "esearch.fcgi?" + urlencode(params))
+                ids = parse_esearch_ids(xml)
+
+                if not ids:
+                    messagebox.showinfo("Brak wyników", "Nie znaleziono rekordów dla podanego zapytania.", parent=win)
+                    status_var.set("")
+                    return
+
+            # 2) EFetch FASTA
+            params = {
+                "db": db_name,
+                "id": ",".join(ids),
+                "rettype": "fasta",
+                "retmode": "text",
+            }
+            status_var.set("Pobieram FASTA (EFetch)...")
+            win.update_idletasks()
+            fasta_text = http_get(base + "efetch.fcgi?" + urlencode(params))
+
+            if not fasta_text.strip().startswith(">"):
+                messagebox.showerror("Błąd", "NCBI nie zwróciło FASTA (sprawdź zapytanie/bazę).", parent=win)
+                status_var.set("")
+                return
+
+            # 3) zapisz
+            out_path = filedialog.asksaveasfilename(
+                parent=win,
+                title="Zapisz pobrane FASTA",
+                defaultextension=".fasta",
+                filetypes=[("FASTA", "*.fasta *.fa *.fna *.faa"), ("Wszystkie", "*.*")]
+            )
+            if not out_path:
+                status_var.set("")
+                return
+
+            Path(out_path).write_text(fasta_text, encoding="utf-8")
+            self.log(f"Pobrano FASTA z NCBI: {out_path}")
+
+            # 4) wczytaj do aplikacji przez Twoją funkcję load_fasta(path)
+            try:
+                seqs = load_fasta(out_path)  # <- używa Twojej funkcji globalnej
+                self.sequences = seqs
+                self.log(f"Wczytano {len(seqs)} sekwencji")
+            except Exception as e:
+                messagebox.showerror("Błąd FASTA", str(e), parent=win)
+                return
+
+            # 5) przełącz na podgląd
+            try:
+                self.tabs.select(self.tab_preview)
+            except Exception:
+                pass
+
+            win.destroy()
+
+        btns = ttk.Frame(frm)
+        btns.grid(row=5, column=0, columnspan=3, sticky="e", pady=(12, 0))
+        ttk.Button(btns, text="Anuluj", command=win.destroy).pack(side="right")
+        ttk.Button(btns, text="Pobierz", command=do_download).pack(side="right", padx=(0, 8))
+
+        entry.bind("<Return>", lambda e: do_download())
 
     def about(self):
         """Informacje o programie"""
