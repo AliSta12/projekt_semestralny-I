@@ -27,6 +27,8 @@ import re
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np
+from analysis_engine import compute_analysis
+from export_tab import ExportTab
 
 
 # ==================================================
@@ -239,6 +241,8 @@ class DNAApp(tk.Tk):
         self.current_fasta = None
         self.motifs = []
         self.DEV_MODE = False  # <-- zmień na False gdy niepotrzebne
+        self.analysis_result = None
+        self.figures = {}
 
         # budowa interfejsu
         self.sort_state = {}  # zapamiętuje kierunek sortowania kolumn
@@ -275,16 +279,12 @@ class DNAApp(tk.Tk):
         ncbi = tk.Menu(menubar, tearoff=0)
         ncbi.add_command(label="Pobierz z NCBI", command=self.download_ncbi)
 
-        eksport = tk.Menu(menubar, tearoff=0)
-        eksport.add_command(label="Eksportuj CSV/PDF", command=self.export_data)
-
         pomoc = tk.Menu(menubar, tearoff=0)
         pomoc.add_command(label="O programie", command=self.about)
 
         menubar.add_cascade(label="Plik", menu=plik)
         menubar.add_cascade(label="Motywy", menu=motywy)
         menubar.add_cascade(label="NCBI", menu=ncbi)
-        menubar.add_cascade(label="Eksport", menu=eksport)
         menubar.add_cascade(label="Pomoc", menu=pomoc)
 
         self.config(menu=menubar)
@@ -342,6 +342,16 @@ class DNAApp(tk.Tk):
         self.tabs.add(self.tab_preview, text="Podgląd sekwencji")
         self.tabs.add(self.tab_results, text="Wyniki analizy")
         self.tabs.add(self.tab_viz, text="Wizualizacja")
+        self.tab_export = ttk.Frame(self.tabs)
+        self.tabs.add(self.tab_export, text="Eksport")
+
+        export_widget = ExportTab(
+            self.tab_export,
+            get_result=lambda: self.analysis_result,
+            get_figures=lambda: self.figures,
+            log_fn=self.log,
+        )
+        export_widget.pack(fill="both", expand=True)
 
         # ==================================================
         # PODGLĄD FASTA
@@ -479,19 +489,6 @@ class DNAApp(tk.Tk):
         mode = "Surowe" if self.normalization_mode.get() == "raw" else "Na 1000 nt"
         self.status_var.set(f"✔ Sekwencje: {seq_n} | Motywy: {mot_n} | Tryb: {mode}")
 
-    def refresh_csv_files(self):
-        """Odświeża listę plików CSV w zakładce Eksport"""
-
-        self.export_listbox.delete(0, "end")
-        project_dir = os.path.dirname(os.path.abspath(__file__))
-
-        for f in os.listdir(project_dir):
-            if f.lower().endswith(".csv"):
-                self.export_listbox.insert("end", f)
-
-        if self.export_listbox.size() == 0:
-            self.export_listbox.insert("end", "(brak plików CSV)")
-
     def load_test_data(self):
         """Ładuje przykładowe dane testowe (tryb developerski)"""
 
@@ -540,6 +537,9 @@ class DNAApp(tk.Tk):
 
             self.sequences = load_fasta(path)
             self.current_fasta = path
+
+            self.analysis_result = None
+            self.figures.clear()
 
             for i, (k, v) in enumerate(self.sequences.items()):
                 if i == 20:
@@ -784,6 +784,8 @@ class DNAApp(tk.Tk):
 
             self.motifs.append(m)
             self.motifs = unique_preserve_order(self.motifs)
+            self.analysis_result = None
+            self.figures.clear()
             motif_entry.delete(0, "end")
             self.log(f"Dodano motyw: {m}")
             refresh_lists()
@@ -811,6 +813,8 @@ class DNAApp(tk.Tk):
             if not messagebox.askyesno("Wyczyścić motywy?", "Na pewno usunąć wszystkie motywy?", parent=win):
                 return
             self.motifs.clear()
+            self.analysis_result = None
+            self.figures.clear()
             self.log("Wyczyszczono wszystkie motywy.")
             refresh_lists()
             refresh_accordion_checks()
@@ -901,6 +905,9 @@ class DNAApp(tk.Tk):
                     added += 1
 
             self.motifs = unique_preserve_order(self.motifs)
+            if added > 0:
+                self.analysis_result = None
+                self.figures.clear()
 
             self.log(f"Import CSV/TXT (dodano {added}, było {before}, jest {len(self.motifs)})")
 
@@ -1009,15 +1016,24 @@ class DNAApp(tk.Tk):
             autosize()
 
         def on_toggle_motif(seq: str, checked: bool):
+            changed = False
+
             if checked:
                 if seq not in self.motifs:
                     self.motifs.append(seq)
                     self.motifs = unique_preserve_order(self.motifs)
                     self.log(f"Dodano motyw: {seq}")
+                    changed = True
             else:
                 if seq in self.motifs:
                     self.motifs = [m for m in self.motifs if m != seq]
                     self.log(f"Usunięto motyw: {seq}")
+                    changed = True
+
+            if changed:
+                self.analysis_result = None
+                self.figures.clear()
+
             refresh_lists()
             refresh_accordion_checks()
 
@@ -1064,51 +1080,28 @@ class DNAApp(tk.Tk):
         autosize()
 
     def run_analysis(self):
-        """Buduje macierzową tabelę pivot"""
-
         if not self.sequences or not self.motifs:
             messagebox.showwarning("Błąd", "Wczytaj FASTA i dodaj motywy")
             return
 
-        # wyczyść tabelę
-        for row in self.results_table.get_children():
-            self.results_table.delete(row)
-
-        # dynamiczne kolumny
-        columns = ["Sekwencja"] + self.motifs + ["SUMA"]
-        self.results_table["columns"] = columns
-
-        for col in columns:
-            self.results_table.heading(
-                col,
-                text=f"{col} ⇅",
-                command=lambda c=col: self.sort_column(c)
+        try:
+            # 🔬 liczenie tylko raz
+            self.analysis_result = compute_analysis(
+                sequences=self.sequences,
+                motifs=self.motifs,
+                iupac_count_fn=iupac_count,
+                fasta_path=self.current_fasta,
             )
-            self.results_table.column(col, width=90, anchor="center")
 
-        # wypełnianie tabeli
-        for seq_id, seq in self.sequences.items():
-            row = [seq_id]
-            total = 0
-            seq_length = len(seq)
+            # 🔁 render widoków
+            self.render_results_table()
+            self.draw_visualization()
 
-            for motif in self.motifs:
-                count = iupac_count(seq, motif)
+            self.update_status()
+            self.log("Analiza zakończona")
 
-                if self.normalization_mode.get() == "norm" and seq_length > 0:
-                    value = round((count / seq_length) * 1000, 1)
-                else:
-                    value = count
-
-                row.append(value)
-                total += value
-
-            row.append(round(total, 1))
-            self.results_table.insert("", "end", values=row)
-
-        self.log("Analiza zakończona")
-        self.draw_visualization()
-        self.update_status()
+        except Exception as e:
+            messagebox.showerror("Błąd analizy", str(e))
 
     def sort_column(self, col):
         """Sortowanie kolumny + strzałki w nagłówkach"""
@@ -1177,30 +1170,15 @@ class DNAApp(tk.Tk):
         if not self.sequences or not self.motifs:
             return
 
-        # budujemy macierz danych
-        data = []
+        if self.analysis_result is None:
+            return
 
-        for seq_id, seq in self.sequences.items():
-            row = []
-            seq_length = len(seq)
-
-            for motif in self.motifs:
-                count = iupac_count(seq, motif)
-
-                if self.normalization_mode.get() == "norm" and seq_length > 0:
-                    value = (count / seq_length) * 1000
-                else:
-                    value = count
-
-                row.append(value)
-
-            data.append(row)
-
-        data = np.array(data)
+        data = self.analysis_result.matrix(self.normalization_mode.get())
         self.heatmap_data = data
 
         # tworzymy wykres
         fig, ax = plt.subplots(figsize=(8, 5))
+        self.figures["heatmap"] = fig
 
         # krótka instrukcja dla użytkownika
         ax.text(
@@ -1260,13 +1238,14 @@ class DNAApp(tk.Tk):
                     fontsize=8
                 )
 
-        # etykiety osi x
-        ax.set_xticks(np.arange(len(self.motifs)))
-        ax.set_xticklabels(self.motifs, rotation=45, ha="right")
+        motifs = self.analysis_result.motifs
+        seq_ids = self.analysis_result.seq_ids
 
-        # etykiety osi y
-        ax.set_yticks(np.arange(len(self.sequences)))
-        ax.set_yticklabels(list(self.sequences.keys()))
+        ax.set_xticks(np.arange(len(motifs)))
+        ax.set_xticklabels(motifs, rotation=45, ha="right")
+
+        ax.set_yticks(np.arange(len(seq_ids)))
+        ax.set_yticklabels(seq_ids)
 
         # Umożliwiamy klikanie w etykiety osi
         for label in ax.get_xticklabels():
@@ -1350,28 +1329,22 @@ class DNAApp(tk.Tk):
         if not self.selected_sequence:
             return
 
-        # Pobieramy sekwencję DNA na podstawie zapisanego ID
-        seq = self.sequences[self.selected_sequence]
-        seq_length = len(seq)
+        if self.analysis_result is None:
+            return
 
-        # Lista wartości dla osi Y (liczby motywów)
-        values = []
+        mode = self.normalization_mode.get()
+        mat = self.analysis_result.matrix(mode)
 
-        # Dla każdego motywu liczymy jego wystąpienia
-        for motif in self.motifs:
-            count = iupac_count(seq, motif)
+        # znajdź indeks wybranej sekwencji
+        i = self.analysis_result.seq_ids.index(self.selected_sequence)
 
-            # Jeśli wybrano tryb normalizacji
-            # przeliczamy na 1000 nukleotydów
-            if self.normalization_mode.get() == "norm" and seq_length > 0:
-                value = (count / seq_length) * 1000
-            else:
-                value = count
-
-            values.append(value)
+        # pobierz wartości dla wszystkich motywów
+        values = mat[i, :]
 
         # Tworzymy nową figurę matplotlib
         fig, ax = plt.subplots(figsize=(6, 4))
+
+        self.figures[f"barplot_seq_{self.selected_sequence}"] = fig
 
         # Główny tytuł wykresu (spójny z heatmapą)
         fig.suptitle(
@@ -1380,14 +1353,13 @@ class DNAApp(tk.Tk):
             fontweight="bold"
         )
 
-        # Pozycje słupków
-        x_positions = np.arange(len(self.motifs))
+        motifs = self.analysis_result.motifs
 
-        # Rysowanie słupków
+        x_positions = np.arange(len(motifs))
         ax.bar(x_positions, values)
 
         ax.set_xticks(x_positions)
-        ax.set_xticklabels(self.motifs, rotation=45, ha="right")
+        ax.set_xticklabels(motifs, rotation=45, ha="right")
 
         # Podtytuł – konkretna sekwencja
         ax.set_title(
@@ -1431,24 +1403,25 @@ class DNAApp(tk.Tk):
         if not self.selected_motif:
             return
 
-        values = []
+        if self.analysis_result is None:
+            return
 
-        for seq_id, seq in self.sequences.items():
-            seq_length = len(seq)
-            count = iupac_count(seq, self.selected_motif)
+        mode = self.normalization_mode.get()
+        mat = self.analysis_result.matrix(mode)
 
-            if self.normalization_mode.get() == "norm" and seq_length > 0:
-                value = (count / seq_length) * 1000
-            else:
-                value = count
+        # indeks wybranego motywu
+        j = self.analysis_result.motifs.index(self.selected_motif)
 
-            values.append(value)
+        # wartości dla wszystkich sekwencji
+        values = mat[:, j]
 
         # Czyścimy dolny panel
         for w in self.viz_bottom.winfo_children():
             w.destroy()
 
         fig, ax = plt.subplots(figsize=(6, 4))
+
+        self.figures[f"barplot_motif_{self.selected_motif}"] = fig
 
         # Główny tytuł wykresu (taki sam styl jak heatmapa)
         fig.suptitle(
@@ -1457,11 +1430,13 @@ class DNAApp(tk.Tk):
             fontweight="bold"
         )
 
-        x_positions = np.arange(len(self.sequences))
+        seq_ids = self.analysis_result.seq_ids
+
+        x_positions = np.arange(len(seq_ids))
         ax.bar(x_positions, values)
 
         ax.set_xticks(x_positions)
-        ax.set_xticklabels(list(self.sequences.keys()), rotation=45, ha="right")
+        ax.set_xticklabels(seq_ids, rotation=45, ha="right")
 
         # Podtytuł – konkretna nazwa motywu
         ax.set_title(
@@ -1525,7 +1500,7 @@ class DNAApp(tk.Tk):
         """
         Odświeża heatmapę i barplot po zmianie trybu raw / norm.
         """
-
+        self.render_results_table()
         self.draw_visualization()
 
         # jeśli coś było wybrane – przerysuj barplot
@@ -1575,33 +1550,6 @@ class DNAApp(tk.Tk):
         if hasattr(self, "current_canvas"):
             self.current_canvas.draw_idle()
 
-    # ==================================================
-    # EKSPORT I INFORMACJE
-    # ==================================================
-
-    def export_data(self):
-        """Eksportuje wyniki analizy do pliku CSV"""
-
-        if not self.results_table.get_children():
-            messagebox.showinfo("Eksport", "Brak wyników do eksportu.")
-            return
-
-        path = filedialog.asksaveasfilename(
-            defaultextension=".csv",
-            filetypes=[("CSV", "*.csv")]
-        )
-
-        if not path:
-            return
-
-        with open(path, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["Sekwencja", "Motyw", "Liczba"])
-
-            for row in self.results_table.get_children():
-                writer.writerow(self.results_table.item(row)["values"])
-
-        self.log(f"Wyeksportowano wyniki do: {path}")
 
     def download_ncbi(self):
         """Pobierz FASTA z NCBI (E-utilities) i wczytaj do aplikacji."""
@@ -1750,6 +1698,37 @@ class DNAApp(tk.Tk):
             "Analiza motywów DNA\nProjekt zaliczeniowy"
         )
 
+    def render_results_table(self):
+        # wyczyść tabelę
+        for row in self.results_table.get_children():
+            self.results_table.delete(row)
+
+        if self.analysis_result is None:
+            return
+
+        mode = self.normalization_mode.get()
+        mat = self.analysis_result.matrix(mode)
+        seq_ids = self.analysis_result.seq_ids
+        motifs = self.analysis_result.motifs
+
+        # dynamiczne kolumny
+        columns = ["Sekwencja"] + motifs + ["SUMA"]
+        self.results_table["columns"] = columns
+
+        for col in columns:
+            self.results_table.heading(col, text=f"{col} ⇅", command=lambda c=col: self.sort_column(c))
+            self.results_table.column(col, width=90, anchor="center")
+
+        for i, sid in enumerate(seq_ids):
+            row_vals = mat[i, :]
+            if mode == "raw":
+                cells = [str(int(v)) for v in row_vals]
+                total = str(int(row_vals.sum()))
+            else:
+                cells = [f"{v:.1f}" for v in row_vals]
+                total = f"{row_vals.sum():.1f}"
+
+            self.results_table.insert("", "end", values=[sid] + cells + [total])
 
 # ==================================================
 # URUCHOMIENIE PROGRAMU
