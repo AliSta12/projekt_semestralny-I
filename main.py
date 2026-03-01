@@ -1839,11 +1839,16 @@ class DNAApp(tk.Tk):
 
         if hasattr(self, "viz_bottom") and self.viz_bottom.winfo_exists():
             for w in self.viz_bottom.winfo_children():
+                if hasattr(self, "close_barplot_btn") and w is self.close_barplot_btn:
+                    continue
                 w.destroy()
+            # dodatkowo schowaj panel (jeśli używasz height=0)
+            self.viz_bottom.configure(height=0)
+            self.viz_bottom.pack_propagate(False)
 
         # schowaj przycisk zamykania barplotu
         if hasattr(self, "close_barplot_btn") and self.close_barplot_btn.winfo_exists():
-            self.close_barplot_btn.pack_forget()
+            self.close_barplot_btn.place_forget()
 
         # referencje runtime (żeby nie trzymać starych obiektów)
         if hasattr(self, "current_canvas"):
