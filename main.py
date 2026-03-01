@@ -269,6 +269,8 @@ class DNAApp(tk.Tk):
         menubar = tk.Menu(self)
 
         plik = tk.Menu(menubar, tearoff=0)
+        plik.add_command(label="Nowa analiza", command=self.new_analysis)
+        plik.add_separator()
         plik.add_command(label="Wczytaj plik", command=self.gui_load_file)
         plik.add_separator()
         plik.add_command(label="Wyjście", command=self.quit)
@@ -522,6 +524,19 @@ class DNAApp(tk.Tk):
 
     def gui_load_file(self):
         """Wczytuje plik FASTA wybrany przez użytkownika"""
+
+        # ✅ jeśli była analiza, zapytaj czy wyczyścić poprzednie wyniki
+        if getattr(self, "analysis_done", False):
+            ok = messagebox.askyesno(
+                "Nowa analiza",
+                "Masz już wykonaną analizę.\n"
+                "Czy chcesz wczytać nowy plik i usunąć poprzednie wyniki oraz motywy?"
+            )
+            if not ok:
+                return
+
+            self.clear_results()
+            self.analysis_done = False
 
         path = filedialog.askopenfilename(
             title="Wybierz FASTA",
@@ -1099,6 +1114,7 @@ class DNAApp(tk.Tk):
 
             self.update_status()
             self.log("Analiza zakończona")
+            self.analysis_done = True
 
         except Exception as e:
             messagebox.showerror("Błąd analizy", str(e))
@@ -1500,6 +1516,9 @@ class DNAApp(tk.Tk):
         """
         Odświeża heatmapę i barplot po zmianie trybu raw / norm.
         """
+        if self.analysis_result is None:
+            return
+
         self.render_results_table()
         self.draw_visualization()
 
@@ -1729,6 +1748,116 @@ class DNAApp(tk.Tk):
                 total = f"{row_vals.sum():.1f}"
 
             self.results_table.insert("", "end", values=[sid] + cells + [total])
+
+    def new_analysis(self):
+        # jeśli nie ma czego czyścić, po prostu wyjdź
+        if not getattr(self, "analysis_done", False) and (not self.sequences and not self.motifs):
+            return
+
+        ok = messagebox.askyesno(
+            "Nowa analiza",
+            "Czy na pewno chcesz rozpocząć nową analizę?\n"
+            "Poprzednie wyniki, wizualizacje, FASTA i motywy zostaną usunięte."
+        )
+        if not ok:
+            return
+
+        self.clear_results()
+        self.analysis_done = False
+        self.log("Rozpoczęto nową analizę.")
+
+    def clear_results(self):
+        # --- ANALIZA / EKSPORT ---
+        self.analysis_result = None
+        if hasattr(self, "figures") and self.figures is not None:
+            self.figures.clear()
+
+        # --- FASTA / PODGLĄD ---
+        if hasattr(self, "sequences") and self.sequences is not None:
+            self.sequences.clear()
+        self.current_fasta = None
+
+        if hasattr(self, "preview_box") and self.preview_box.winfo_exists():
+            self.preview_box.delete("1.0", "end")
+
+        # --- WIZUALIZACJE ---
+        if hasattr(self, "viz_top") and self.viz_top.winfo_exists():
+            for w in self.viz_top.winfo_children():
+                w.destroy()
+
+        if hasattr(self, "viz_bottom") and self.viz_bottom.winfo_exists():
+            for w in self.viz_bottom.winfo_children():
+                w.destroy()
+
+        # schowaj przycisk zamykania barplotu
+        if hasattr(self, "close_barplot_btn") and self.close_barplot_btn.winfo_exists():
+            self.close_barplot_btn.pack_forget()
+
+        # referencje runtime (żeby nie trzymać starych obiektów)
+        if hasattr(self, "current_canvas"):
+            self.current_canvas = None
+        if hasattr(self, "hover_annotation"):
+            self.hover_annotation = None
+        if hasattr(self, "heatmap_data"):
+            self.heatmap_data = None
+
+        # --- WYNIKI (tabela/tekst) jeśli masz ---
+        for name in ("results_tree", "results_table", "tree_results"):
+            if hasattr(self, name):
+                w = getattr(self, name)
+                try:
+                    for item in w.get_children():
+                        w.delete(item)
+                except Exception:
+                    pass
+
+        for name in ("results_text", "results_box"):
+            if hasattr(self, name):
+                w = getattr(self, name)
+                try:
+                    w.delete("1.0", "end")
+                except Exception:
+                    pass
+
+        # --- MOTYWY (pełny reset) ---
+        if hasattr(self, "motifs") and self.motifs is not None:
+            self.motifs.clear()
+
+        if hasattr(self, "motif_vars"):
+            for var in self.motif_vars.values():
+                try:
+                    var.set(False)
+                except Exception:
+                    pass
+
+        if hasattr(self, "motif_entry") and self.motif_entry.winfo_exists():
+            try:
+                self.motif_entry.delete(0, "end")
+            except Exception:
+                pass
+
+        # --- LOGI (jeśli chcesz czyścić przy nowej analizie) ---
+        for name in ("log_text", "log_box"):
+            if hasattr(self, name):
+                w = getattr(self, name)
+                try:
+                    w.delete("1.0", "end")
+                except Exception:
+                    pass
+
+        # --- STATUS ---
+        if hasattr(self, "status_var"):
+            self.status_var.set("Gotowe")
+
+        # --- UX: wróć na podgląd ---
+        if hasattr(self, "tabs"):
+            try:
+                self.tabs.select(self.tab_preview)
+            except Exception:
+                pass
+
+        self.selected_sequence = None
+        self.selected_motif = None
 
 # ==================================================
 # URUCHOMIENIE PROGRAMU
