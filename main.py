@@ -437,16 +437,20 @@ class DNAApp(tk.Tk):
 
         # --- dolna część: barplot (stała wysokość, żeby heatmapa nie znikała) ---
         self.viz_bottom = tk.Frame(self.viz_frame, height=260)
-        self.viz_bottom.pack(fill="x")
+        self.viz_bottom.pack(side="bottom", fill="x")
         self.viz_bottom.pack_propagate(False)
 
         # --- przycisk zamykania barplotu (ukryty na starcie) ---
         self.close_barplot_btn = tk.Button(
-            self.viz_frame,
-            text="✖ Zamknij wykres",
-            command=self.hide_barplot
+            self.viz_bottom,  # rodzic to viz_bottom
+            text="✖",
+            command=self.hide_barplot,
+            bd=0,
+            highlightthickness=0,
+            font=("Segoe UI", 11, "bold"),
+            cursor="hand2"
         )
-        self.close_barplot_btn.pack_forget()
+        self.close_barplot_btn.place_forget()
 
         # --- STATUS BAR (zawsze na dole) ---
         self.status_var = tk.StringVar(value="Gotowe")
@@ -1397,6 +1401,8 @@ class DNAApp(tk.Tk):
 
         # Czyścimy poprzedni wykres słupkowy
         for w in self.viz_bottom.winfo_children():
+            if w is self.close_barplot_btn:
+                continue
             w.destroy()
 
         self.viz_bottom.configure(height=260)
@@ -1409,9 +1415,11 @@ class DNAApp(tk.Tk):
         canvas_widget = canvas.get_tk_widget()
         canvas_widget.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # pokaż panel i przycisk
-        self.viz_bottom.pack(fill="x")
-        self.close_barplot_btn.pack(pady=(5, 0))
+        # X jako overlay w prawym górnym rogu barplota
+        self.close_barplot_btn.lift()  # na wierzch nad canvas
+        self.close_barplot_btn.place(relx=1.0, rely=0.0, anchor="ne", x=-6, y=6)
+
+        self.autosize_viz_window()
 
     def draw_barplot_motif(self):
         """Rysuje wykres słupkowy dla wybranego motywu (rozkład w sekwencjach)."""
@@ -1433,6 +1441,8 @@ class DNAApp(tk.Tk):
 
         # Czyścimy dolny panel
         for w in self.viz_bottom.winfo_children():
+            if w is self.close_barplot_btn:
+                continue
             w.destroy()
 
         fig, ax = plt.subplots(figsize=(6, 4))
@@ -1480,8 +1490,9 @@ class DNAApp(tk.Tk):
         canvas_widget = canvas.get_tk_widget()
         canvas_widget.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # pokaż przycisk (panel zostaje w layoucie cały czas)
-        self.close_barplot_btn.pack(pady=(5, 0))
+        self.close_barplot_btn.lift()
+        self.close_barplot_btn.place(relx=1.0, rely=0.0, anchor="ne", x=-6, y=6)
+        self.autosize_viz_window()
 
     def on_hover(self, event):
         # jeśli poza wykresem → nic nie rób
@@ -1532,25 +1543,19 @@ class DNAApp(tk.Tk):
         self.update_status()
 
     def hide_barplot(self):
-        """
-        Ukrywa wykres słupkowy (czyści zawartość),
-        resetuje zaznaczenia etykiet.
-        """
-
-        # 1) wyczyść dolny panel
+        # wyczyść dolny panel, ale NIE niszcz przycisku X
         for w in self.viz_bottom.winfo_children():
+            if w is self.close_barplot_btn:
+                continue
             w.destroy()
 
-        # 2) ZAMIANA KLUCZOWA:
-        #    NIE pack_forget() -> zostawiamy viz_bottom w layoucie
-        #    żeby nie rozjeżdżało układu (logi/status).
         self.viz_bottom.configure(height=0)
         self.viz_bottom.pack_propagate(False)
 
-        # 3) ukryj przycisk
-        self.close_barplot_btn.pack_forget()
+        # ukryj X
+        self.close_barplot_btn.place_forget()
 
-        # 4) reset podświetleń etykiet
+        # ...reszta Twojego kodu resetującego...
         if getattr(self, "active_label_x", None):
             self.active_label_x.set_color("black")
             self.active_label_x.set_fontweight("normal")
@@ -1561,13 +1566,13 @@ class DNAApp(tk.Tk):
             self.active_label_y.set_fontweight("normal")
             self.active_label_y = None
 
-        # 5) reset wyboru
         self.selected_sequence = None
         self.selected_motif = None
 
-        # 6) odśwież canvas (żeby zmiana koloru była widoczna)
         if hasattr(self, "current_canvas"):
             self.current_canvas.draw_idle()
+
+        self.autosize_viz_window()
 
     def download_ncbi(self):
         """Pobierz FASTA z NCBI (E-utilities) i wczytaj do aplikacji."""
@@ -1905,6 +1910,13 @@ class DNAApp(tk.Tk):
 
         self.selected_sequence = None
         self.selected_motif = None
+
+    def autosize_viz_window(self, pad=16):
+        win = self.viz_frame.winfo_toplevel()
+        win.update_idletasks()
+        w = win.winfo_reqwidth() + pad
+        h = win.winfo_reqheight() + pad
+        win.geometry(f"{w}x{h}")
 
 # ==================================================
 # URUCHOMIENIE PROGRAMU
