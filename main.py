@@ -1569,20 +1569,26 @@ class DNAApp(tk.Tk):
         if hasattr(self, "current_canvas"):
             self.current_canvas.draw_idle()
 
-
     def download_ncbi(self):
         """Pobierz FASTA z NCBI (E-utilities) i wczytaj do aplikacji."""
         import tkinter as tk
         from tkinter import ttk, messagebox, filedialog
         from urllib.parse import urlencode
         from urllib.request import urlopen, Request
+        from urllib.error import URLError, HTTPError
         import re
         from pathlib import Path
 
         def http_get(url: str) -> str:
             req = Request(url, headers={"User-Agent": "DNAApp/1.0 (NCBI E-utilities)"})
-            with urlopen(req, timeout=30) as r:
-                return r.read().decode("utf-8", errors="replace")
+            try:
+                with urlopen(req, timeout=30) as r:
+                    return r.read().decode("utf-8", errors="replace")
+            except HTTPError as e:
+                # np. 429 Too Many Requests
+                raise RuntimeError(f"Błąd HTTP {e.code}: {e.reason}") from e
+            except URLError as e:
+                raise RuntimeError(f"Błąd sieci: {e.reason}") from e
 
         def is_accession_like(s: str) -> bool:
             # liberalnie: bez spacji, tylko znaki typowe dla accession/UID
@@ -1600,27 +1606,54 @@ class DNAApp(tk.Tk):
         frm = ttk.Frame(win, padding=12)
         frm.pack(fill="both", expand=True)
 
-        ttk.Label(frm, text="Wpisz accession/UID (np. NC_000001.11) lub zapytanie (ESearch):",
-                  font=("Segoe UI", 9, "bold")).grid(row=0, column=0, columnspan=3, sticky="w")
+        ttk.Label(
+            frm,
+            text="Wpisz accession/UID (np. NC_000001.11) lub zapytanie (NCBI ESearch):",
+            font=("Segoe UI", 9, "bold")
+        ).grid(row=0, column=0, columnspan=4, sticky="w")
 
         entry = ttk.Entry(frm, width=56)
         entry.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(4, 8))
         entry.focus_set()
 
-        ttk.Label(frm, text="Baza:").grid(row=2, column=0, sticky="w")
-        db_var = tk.StringVar(value="nuccore")
-        db = ttk.Combobox(frm, textvariable=db_var, values=["nuccore", "protein"], state="readonly", width=12)
-        db.grid(row=2, column=1, sticky="w", padx=(6, 0))
+        def show_esearch_info():
+            info = tk.Toplevel(win)
+            info.title("Co to jest ESearch?")
+            info.transient(win)
+            info.grab_set()
+            info.resizable(False, False)
 
-        ttk.Label(frm, text="Max rekordów (dla zapytania):").grid(row=3, column=0, sticky="w", pady=(6, 0))
-        retmax_var = tk.IntVar(value=20)
-        retmax = ttk.Spinbox(frm, from_=1, to=500, textvariable=retmax_var, width=8)
-        retmax.grid(row=3, column=1, sticky="w", padx=(6, 0), pady=(6, 0))
+            frame = ttk.Frame(info, padding=16)
+            frame.pack(fill="both", expand=True)
 
-        status_var = tk.StringVar(value="")
-        ttk.Label(frm, textvariable=status_var).grid(row=4, column=0, columnspan=3, sticky="w", pady=(10, 0))
+            text = (
+                "ESearch to wyszukiwarka NCBI.\n\n"
+                "Gdy wpiszesz zapytanie tekstowe, aplikacja:\n"
+                "1) użyje ESearch, aby znaleźć pasujące rekordy (UID)\n"
+                "2) następnie użyje EFetch, aby pobrać FASTA\n\n"
+                "Przykłady zapytań:\n"
+                "• TP53[Gene] AND Homo sapiens[Organism]\n"
+                "• BRCA1 AND human\n"
+                "• mitochondrion[Title] AND Mus musculus\n\n"
+                "Jeśli wpiszesz accession (np. NC_000001.11), "
+                "ESearch zostanie pominięty."
+            )
 
-        frm.columnconfigure(2, weight=1)
+            label = ttk.Label(
+                frame,
+                text=text,
+                justify="left",
+                wraplength=500,
+                font=("Segoe UI", 11)  # <- większa czcionka
+            )
+            label.pack(anchor="w")
+
+            ttk.Button(frame, text="OK", command=info.destroy).pack(pady=(12, 0))
+
+        ttk.Button(frm, text="?", width=3, command=show_esearch_info).grid(
+            row=1, column=3, sticky="w", padx=(6, 0), pady=(4, 8)
+        )
+
 
         def do_download():
             q = entry.get().strip()
@@ -1628,47 +1661,61 @@ class DNAApp(tk.Tk):
                 messagebox.showwarning("Brak danych", "Wpisz accession/UID albo zapytanie.", parent=win)
                 return
 
-            db_name = db_var.get().strip()
+            db_name = "nuccore"
             base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
 
             # 1) ustal listę ID
             ids: list[str] = []
             parts = [x for x in re.split(r"[,\s]+", q) if x]
 
-            if parts and all(is_accession_like(x) for x in parts):
-                # traktujemy jako accession/uid listę
-                ids = parts
-            else:
-                # ESearch -> IDs
+            try:
+                if parts and all(is_accession_like(x) for x in parts):
+                    # traktujemy jako accession/uid listę
+                    ids = parts
+                else:
+                    # ESearch -> IDs
+                    params = {
+                        "db": db_name,
+                        "term": q,
+                        "retmax": int(retmax_var.get()),
+                        "retmode": "xml",
+                    }
+                    status_var.set("Szukam w NCBI (ESearch)...")
+                    win.update_idletasks()
+                    xml = http_get(base + "esearch.fcgi?" + urlencode(params))
+                    ids = parse_esearch_ids(xml)
+
+                    if not ids:
+                        messagebox.showinfo(
+                            "Brak wyników",
+                            "Nie znaleziono rekordów dla podanego zapytania.",
+                            parent=win
+                        )
+                        status_var.set("")
+                        return
+
+                # 2) EFetch FASTA
                 params = {
                     "db": db_name,
-                    "term": q,
-                    "retmax": int(retmax_var.get()),
-                    "retmode": "xml",
+                    "id": ",".join(ids),
+                    "rettype": "fasta",
+                    "retmode": "text",
                 }
-                status_var.set("Szukam w NCBI (ESearch)...")
+                status_var.set("Pobieram FASTA (EFetch)...")
                 win.update_idletasks()
-                xml = http_get(base + "esearch.fcgi?" + urlencode(params))
-                ids = parse_esearch_ids(xml)
+                fasta_text = http_get(base + "efetch.fcgi?" + urlencode(params))
 
-                if not ids:
-                    messagebox.showinfo("Brak wyników", "Nie znaleziono rekordów dla podanego zapytania.", parent=win)
-                    status_var.set("")
-                    return
-
-            # 2) EFetch FASTA
-            params = {
-                "db": db_name,
-                "id": ",".join(ids),
-                "rettype": "fasta",
-                "retmode": "text",
-            }
-            status_var.set("Pobieram FASTA (EFetch)...")
-            win.update_idletasks()
-            fasta_text = http_get(base + "efetch.fcgi?" + urlencode(params))
+            except Exception as e:
+                messagebox.showerror("Błąd pobierania", str(e), parent=win)
+                status_var.set("")
+                return
 
             if not fasta_text.strip().startswith(">"):
-                messagebox.showerror("Błąd", "NCBI nie zwróciło FASTA (sprawdź zapytanie/bazę).", parent=win)
+                messagebox.showerror(
+                    "Błąd",
+                    "NCBI nie zwróciło poprawnego FASTA (sprawdź accession lub zapytanie).",
+                    parent=win
+                )
                 status_var.set("")
                 return
 
@@ -1677,7 +1724,7 @@ class DNAApp(tk.Tk):
                 parent=win,
                 title="Zapisz pobrane FASTA",
                 defaultextension=".fasta",
-                filetypes=[("FASTA", "*.fasta *.fa *.fna *.faa"), ("Wszystkie", "*.*")]
+                filetypes=[("FASTA (DNA/RNA)", "*.fasta *.fa *.fna"), ("Wszystkie", "*.*")]
             )
             if not out_path:
                 status_var.set("")
@@ -1704,7 +1751,7 @@ class DNAApp(tk.Tk):
             win.destroy()
 
         btns = ttk.Frame(frm)
-        btns.grid(row=5, column=0, columnspan=3, sticky="e", pady=(12, 0))
+        btns.grid(row=4, column=0, columnspan=4, sticky="e", pady=(12, 0))
         ttk.Button(btns, text="Anuluj", command=win.destroy).pack(side="right")
         ttk.Button(btns, text="Pobierz", command=do_download).pack(side="right", padx=(0, 8))
 
