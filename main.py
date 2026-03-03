@@ -7,7 +7,7 @@ dodawanie motywów nukleotydowych, analizę ich liczby oraz pozycji,
 a także wizualizację wyników i eksport do plików CSV.
 
 Architektura programu:
-1. LOGIKA
+1. LOGIKAvvvv
    - funkcje niezależne od GUI (FASTA, motywy)
 2. GUI
    - interfejs użytkownika (Tkinter)
