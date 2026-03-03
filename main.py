@@ -265,6 +265,7 @@ class DNAApp(tk.Tk):
 
     def create_menu(self):
         """Tworzy menu główne aplikacji"""
+        import tkinter as tk
 
         menubar = tk.Menu(self)
 
@@ -281,15 +282,17 @@ class DNAApp(tk.Tk):
         ncbi = tk.Menu(menubar, tearoff=0)
         ncbi.add_command(label="Pobierz z NCBI", command=self.download_ncbi)
 
-        pomoc = tk.Menu(menubar, tearoff=0)
-        pomoc.add_command(label="O programie", command=self.about)
-
         menubar.add_cascade(label="Plik", menu=plik)
         menubar.add_cascade(label="Motywy", menu=motywy)
         menubar.add_cascade(label="NCBI", menu=ncbi)
-        menubar.add_cascade(label="Pomoc", menu=pomoc)
+
+        # ✅ pojedynczy przycisk w menu (bez submenu)
+        menubar.add_command(label="Pomoc", command=self.open_help_window)
 
         self.config(menu=menubar)
+
+        # (opcjonalnie) F1
+        self.bind_all("<F1>", lambda e: self.open_help_window())
 
     # ==================================================
     # UKŁAD OKNA I WIDŻETY
@@ -1759,13 +1762,6 @@ class DNAApp(tk.Tk):
 
         entry.bind("<Return>", lambda e: do_download())
 
-    def about(self):
-        """Informacje o programie"""
-        messagebox.showinfo(
-            "O programie",
-            "Analiza motywów DNA\nProjekt zaliczeniowy"
-        )
-
     def render_results_table(self):
         # wyczyść tabelę
         for row in self.results_table.get_children():
@@ -1919,6 +1915,89 @@ class DNAApp(tk.Tk):
         w = win.winfo_reqwidth() + pad
         h = win.winfo_reqheight() + pad
         win.geometry(f"{w}x{h}")
+
+    def open_help_window(self):
+        import tkinter as tk
+        from tkinter import ttk, filedialog, messagebox
+        from tkinter.scrolledtext import ScrolledText
+
+        # jeśli już otwarte — podnieś okno
+        if hasattr(self, "help_win") and self.help_win is not None and self.help_win.winfo_exists():
+            self.help_win.lift()
+            self.help_win.focus_force()
+            return
+
+        self.help_win = tk.Toplevel(self)
+        self.help_win.title("Pomoc")
+        self.help_win.geometry("780x520")
+        self.help_win.minsize(520, 360)
+
+        top = ttk.Frame(self.help_win)
+        top.pack(fill="x", padx=10, pady=(10, 0))
+
+        txt = ScrolledText(self.help_win, wrap="word")
+        txt.pack(fill="both", expand=True, padx=10, pady=10)
+
+        help_text = """O aplikacji
+    Program służy do wczytywania plików FASTA i wyszukiwania w sekwencjach zdefiniowanych motywów nukleotydowych z obsługą kodów IUPAC (np. N, R, Y). Wyniki prezentowane są w formie tabelarycznej oraz (opcjonalnie) na wykresach.
+
+    Szybki start
+    1) Plik → Wczytaj plik (FASTA)
+    2) Motywy → Dodaj/usuń motywy
+    3) Uruchom analizę (przycisk w oknie motywów lub w głównym oknie – zależnie od wersji)
+    4) Zakładki: Podgląd / Wyniki / Wizualizacja / Eksport
+
+    Format FASTA
+    - Nagłówek zaczyna się od '>' (np. >seq1 opis)
+    - Sekwencja może być w wielu liniach
+    - Program czyści: usuwa spacje/taby/cyfry, zamienia '?' na 'N' i waliduje znaki
+
+    Dozwolone znaki (DNA/RNA + IUPAC)
+    A C G T U R Y S W K M B D H V N
+
+    Kody IUPAC (skrót)
+    R=A/G, Y=C/T, S=G/C, W=A/T, K=G/T, M=A/C
+    B=C/G/T, D=A/G/T, H=A/C/T, V=A/C/G, N=A/C/G/T
+
+    Uwaga: wyszukiwanie uwzględnia nakładające się dopasowania (overlap).
+
+    Tryb wyników
+    - Surowe: liczba wystąpień
+    - Na 1000 nt: normalizacja względem długości sekwencji
+
+    Najczęstsze problemy
+    - „Nie znaleziono sekwencji”: brak linii nagłówka '>' lub zły format pliku
+    - „Niepoprawne znaki”: znaki spoza alfabetu IUPAC (zamień na N lub usuń)
+    - Brak wyników: motyw nie występuje / zbyt długi / literówki w motywie
+    """
+
+        txt.insert("1.0", help_text)
+        txt.configure(state="disabled")
+
+        def _copy():
+            self.clipboard_clear()
+            self.clipboard_append(help_text)
+            self.update_idletasks()
+            messagebox.showinfo("Pomoc", "Skopiowano treść pomocy do schowka.")
+
+        def _save():
+            path = filedialog.asksaveasfilename(
+                title="Zapisz pomoc",
+                defaultextension=".txt",
+                filetypes=[("Plik tekstowy", "*.txt"), ("Wszystkie pliki", "*.*")]
+            )
+            if not path:
+                return
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(help_text)
+                messagebox.showinfo("Pomoc", "Zapisano plik pomocy.")
+            except Exception as e:
+                messagebox.showerror("Błąd zapisu", str(e))
+
+        ttk.Button(top, text="Kopiuj do schowka", command=_copy).pack(side="left")
+        ttk.Button(top, text="Zapisz do pliku…", command=_save).pack(side="left", padx=(8, 0))
+        ttk.Button(top, text="Zamknij", command=self.help_win.destroy).pack(side="right")
 
 # ==================================================
 # URUCHOMIENIE PROGRAMU
