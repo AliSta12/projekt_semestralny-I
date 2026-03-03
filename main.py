@@ -486,9 +486,6 @@ class DNAApp(tk.Tk):
         self.log_box.insert("end", message + "\n")
         self.log_box.see("end")  # auto-scroll na dół
 
-        # wpis do status bara
-        self.status_var.set(message)
-
     def update_status(self):
         seq_n = len(self.sequences) if self.sequences else 0
         mot_n = len(self.motifs) if self.motifs else 0
