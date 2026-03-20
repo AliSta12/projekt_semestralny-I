@@ -1,7 +1,13 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-from export_manager import export_results_csv, export_report, export_figure, export_all_figures
+from export_manager import (
+    export_results_csv,
+    export_report,
+    export_report_pdf,
+    export_figure,
+    export_all_figures,
+)
 
 
 class ExportTab(ttk.Frame):
@@ -27,8 +33,8 @@ class ExportTab(ttk.Frame):
         t2 = ttk.Frame(nb)
         t3 = ttk.Frame(nb)
 
-        nb.add(t1, text="Wyniki (CSV/TSV)")
-        nb.add(t2, text="Raport (TXT/HTML)")
+        nb.add(t1, text="Tabele")
+        nb.add(t2, text="Raport")
         nb.add(t3, text="Wykresy")
 
         # ---------- Wyniki ----------
@@ -58,7 +64,7 @@ class ExportTab(ttk.Frame):
         ttk.Button(t1, text="Zapisz wyniki…", command=self._export_results).pack(anchor="e", padx=16, pady=12)
 
         # ---------- Raport ----------
-        self.rep_fmt = tk.StringVar(value="txt")
+        self.rep_fmt = tk.StringVar(value="pdf")
         self.rep_mode = tk.StringVar(value="raw")
         self.rep_table = tk.BooleanVar(value=True)
 
@@ -69,6 +75,7 @@ class ExportTab(ttk.Frame):
         ttk.Label(r, text="Format:").pack(side="left")
         ttk.Radiobutton(r, text="TXT", value="txt", variable=self.rep_fmt).pack(side="left", padx=6)
         ttk.Radiobutton(r, text="HTML", value="html", variable=self.rep_fmt).pack(side="left", padx=6)
+        ttk.Radiobutton(r, text="PDF", value="pdf", variable=self.rep_fmt).pack(side="left", padx=6)
 
         r = ttk.Frame(box); r.pack(fill="x", padx=8, pady=6)
         ttk.Label(r, text="Tryb:").pack(side="left")
@@ -76,7 +83,21 @@ class ExportTab(ttk.Frame):
         ttk.Radiobutton(r, text="Na 1000 nt", value="norm", variable=self.rep_mode).pack(side="left", padx=6)
 
         ttk.Checkbutton(box, text="Dołącz tabelę wyników", variable=self.rep_table).pack(anchor="w", padx=12, pady=(0, 6))
-        ttk.Button(t2, text="Zapisz raport…", command=self._export_report).pack(anchor="e", padx=16, pady=12)
+        self.rep_plots_label = ttk.Label(box, text="Wybierz wykresy do raportu:")
+        self.rep_plots_lb = tk.Listbox(box, height=6, selectmode="multiple")
+        self.rep_plots_refresh = ttk.Button(
+            box,
+            text="Odśwież listę wykresów",
+            command=self._refresh_report_plots
+        )
+
+        # początkowe pakowanie
+        self.rep_plots_label.pack(anchor="w", padx=12)
+        self.rep_plots_lb.pack(fill="x", padx=12, pady=(4, 8))
+        self.rep_plots_refresh.pack(anchor="w", padx=12, pady=(0, 6))
+        ttk.Button(box, text="Generuj raport", command=self._export_report).pack(anchor="e", padx=12, pady=12)
+
+        self._update_report_ui()
 
         # ---------- Wykresy ----------
         self.plot_fmt = tk.StringVar(value="png")
@@ -90,6 +111,7 @@ class ExportTab(ttk.Frame):
         ttk.Radiobutton(r, text="PNG", value="png", variable=self.plot_fmt).pack(side="left", padx=6)
         ttk.Radiobutton(r, text="SVG", value="svg", variable=self.plot_fmt).pack(side="left", padx=6)
         ttk.Radiobutton(r, text="PDF", value="pdf", variable=self.plot_fmt).pack(side="left", padx=6)
+        self.rep_fmt.trace_add("write", self._update_report_ui)
 
         ttk.Label(r, text="DPI (PNG):").pack(side="left", padx=(18, 4))
         ttk.Spinbox(r, from_=72, to=600, textvariable=self.plot_dpi, width=6).pack(side="left")
@@ -143,6 +165,31 @@ class ExportTab(ttk.Frame):
             return
 
         fmt = self.rep_fmt.get()
+        if fmt == "pdf":
+            figs = self.get_figures() or {}
+
+            selected = self.rep_plots_lb.curselection()
+            selected_names = [self.rep_plots_lb.get(i) for i in selected]
+
+            path = filedialog.asksaveasfilename(
+                title="Zapisz raport PDF",
+                defaultextension=".pdf",
+                filetypes=[("PDF", "*.pdf"), ("All files", "*.*")]
+            )
+            if not path:
+                return
+
+            export_report_pdf(
+                result=result,
+                path=path,
+                figures=figs,
+                selected_figure_names=selected_names,
+                mode=self.rep_mode.get(),
+            )
+
+            self.log(f"Eksport raportu PDF: {path}")
+            messagebox.showinfo("OK", "Zapisano raport PDF.")
+            return
         ext = "txt" if fmt == "txt" else "html"
         path = filedialog.asksaveasfilename(
             title="Zapisz raport",
@@ -152,12 +199,17 @@ class ExportTab(ttk.Frame):
         if not path:
             return
 
+        selected = self.rep_plots_lb.curselection()
+        selected_names = [self.rep_plots_lb.get(i) for i in selected]
+
         export_report(
             result=result,
             path=path,
             mode=self.rep_mode.get(),
             fmt=fmt,
             include_table=bool(self.rep_table.get()),
+            figures=self.get_figures() or {},
+            selected_figure_names=selected_names,
         )
         self.log(f"Eksport raportu: {path}")
         messagebox.showinfo("OK", "Zapisano raport.")
@@ -167,6 +219,12 @@ class ExportTab(ttk.Frame):
         figs = self.get_figures() or {}
         for name in sorted(figs.keys()):
             self.lb.insert(tk.END, name)
+
+    def _refresh_report_plots(self):
+        self.rep_plots_lb.delete(0, tk.END)
+        figs = self.get_figures() or {}
+        for name in sorted(figs.keys()):
+            self.rep_plots_lb.insert(tk.END, name)
 
     def _export_selected_plot(self):
         figs = self.get_figures() or {}
@@ -212,3 +270,15 @@ class ExportTab(ttk.Frame):
         n = export_all_figures(figs, directory, fmt=fmt, dpi=int(self.plot_dpi.get()))
         self.log(f"Eksport {n} wykresów do: {directory}")
         messagebox.showinfo("OK", f"Zapisano {n} wykresów.")
+
+    def _update_report_ui(self, *args):
+        fmt = self.rep_fmt.get()
+
+        if fmt == "txt":
+            self.rep_plots_lb.pack_forget()
+            self.rep_plots_label.pack_forget()
+            self.rep_plots_refresh.pack_forget()
+        else:
+            self.rep_plots_label.pack(anchor="w", padx=12)
+            self.rep_plots_lb.pack(fill="x", padx=12, pady=(4, 8))
+            self.rep_plots_refresh.pack(anchor="w", padx=12, pady=(0, 6))

@@ -70,6 +70,8 @@ def export_report(
     fmt: ReportFmt = "txt",
     include_table: bool = True,
     table_max_rows: int = 200,
+    figures: Optional[Dict[str, object]] = None,
+    selected_figure_names: Optional[list[str]] = None,
 ) -> None:
     """
     Prosty raport TXT/HTML: metadane + (opcjonalnie) tabela wyników (wide).
@@ -134,6 +136,29 @@ def export_report(
         else:
             out += table_txt + "\n"
 
+    # --- WYKRESY (tylko dla HTML) ---
+    if fmt == "html" and figures:
+        out += h("Wykresy")
+
+        names = selected_figure_names or []
+
+        import base64
+        from io import BytesIO
+
+        for name in names:
+            fig = figures.get(name)
+            if fig is None:
+                continue
+
+            buf = BytesIO()
+            fig.savefig(buf, format="png", bbox_inches="tight", dpi=150)
+            buf.seek(0)
+
+            img_base64 = base64.b64encode(buf.read()).decode("utf-8")
+
+            out += f"<h3>{name}</h3>\n"
+            out += f"<img src='data:image/png;base64,{img_base64}' style='max-width:100%;'><br><br>\n"
+
     if fmt == "html":
         out += "</body></html>"
 
@@ -158,3 +183,76 @@ def export_all_figures(figures: Dict[str, object], directory: str, fmt: str = "p
         export_figure(fig, path, fmt=fmt, dpi=dpi)
         n += 1
     return n
+from matplotlib.backends.backend_pdf import PdfPages
+import matplotlib.pyplot as plt
+import textwrap
+
+
+def export_report_pdf(
+    result: AnalysisResult,
+    path: str,
+    figures: Dict[str, object],
+    selected_figure_names: list[str],
+    mode: str = "raw",
+) -> None:
+    """
+    Eksport jednego PDF zawierającego:
+    1) stronę z raportem tekstowym
+    2) wybrane wykresy (po jednej stronie na wykres)
+    """
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+
+    mat = result.matrix(mode)
+    motifs = result.motifs
+    seq_ids = result.seq_ids
+
+    report_lines = [
+        "Raport analizy motywów DNA",
+        "",
+        f"Data utworzenia wyniku: {result.created_at}",
+        f"Plik FASTA: {result.fasta_path or '-'}",
+        f"Tryb: {mode} ({'surowe' if mode == 'raw' else 'na 1000 nt'})",
+        f"IUPAC: {'enabled' if result.iupac_enabled else 'disabled'}",
+        f"Dopasowania: {'overlapping' if result.overlapping else 'non-overlapping'}",
+        f"Liczba sekwencji: {len(seq_ids)}",
+        f"Liczba motywów: {len(motifs)}",
+        "",
+        "Podsumowanie",
+        f"Suma wszystkich wartości w macierzy: {mat.sum():.1f}" if mode != "raw"
+        else f"Suma wszystkich zliczeń: {int(mat.sum())}",
+        "",
+        "Motywy:",
+        ", ".join(motifs) if motifs else "-",
+        "",
+        "Sekwencje:",
+        ", ".join(seq_ids[:20]) + (" ..." if len(seq_ids) > 20 else ""),
+    ]
+
+    with PdfPages(path) as pdf:
+        # --- strona 1: raport tekstowy ---
+        fig = plt.figure(figsize=(8.27, 11.69))  # A4 portrait in inches
+        fig.patch.set_facecolor("white")
+
+        y = 0.97
+        line_height = 0.028
+
+        for raw_line in report_lines:
+            wrapped = textwrap.wrap(str(raw_line), width=95) or [""]
+            for line in wrapped:
+                fig.text(0.06, y, line, fontsize=10, va="top", ha="left")
+                y -= line_height
+                if y < 0.05:
+                    pdf.savefig(fig, bbox_inches="tight")
+                    plt.close(fig)
+                    fig = plt.figure(figsize=(8.27, 11.69))
+                    fig.patch.set_facecolor("white")
+                    y = 0.97
+
+        pdf.savefig(fig, bbox_inches="tight")
+        plt.close(fig)
+
+        # --- kolejne strony: wybrane wykresy ---
+        for name in selected_figure_names:
+            fig = figures.get(name)
+            if fig is not None:
+                pdf.savefig(fig, bbox_inches="tight")

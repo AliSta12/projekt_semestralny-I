@@ -7,7 +7,7 @@ dodawanie motywów nukleotydowych, analizę ich liczby oraz pozycji,
 a także wizualizację wyników i eksport do plików CSV.
 
 Architektura programu:
-1. LOGIKAvvvv
+1. LOGIKA
    - funkcje niezależne od GUI (FASTA, motywy)
 2. GUI
    - interfejs użytkownika (Tkinter)
@@ -60,7 +60,7 @@ def load_fasta(path):
                 continue
 
             if line.startswith(">"):
-                current_id = line[1:].strip()
+                current_id = line[1:].strip()[:8]
                 if not current_id:
                     raise ValueError(f"Pusty nagłówek w linii {line_num}")
                 if current_id in sequences:
@@ -1431,7 +1431,7 @@ class DNAApp(tk.Tk):
             else "Liczba"
         )
 
-        fig.tight_layout(rect=[0, 0, 1, 0.92])
+        fig.tight_layout(rect=[0, 0, 1, 0.88])
         fig.subplots_adjust(bottom=0.30)
 
         # Czyścimy poprzedni wykres słupkowy
@@ -1513,7 +1513,7 @@ class DNAApp(tk.Tk):
             else "Liczba"
         )
 
-        fig.tight_layout(rect=[0, 0, 1, 0.92])
+        fig.tight_layout(rect=[0, 0, 1, 0.88])
         fig.subplots_adjust(bottom=0.30)
 
         self.viz_bottom.configure(height=260)
@@ -1610,91 +1610,6 @@ class DNAApp(tk.Tk):
         self.autosize_viz_window()
 
     def download_ncbi(self):
-        """Pobierz FASTA z NCBI (E-utilities) i wczytaj do aplikacji."""
-        import tkinter as tk
-        from tkinter import ttk, messagebox, filedialog
-        from urllib.parse import urlencode
-        from urllib.request import urlopen, Request
-        from urllib.error import URLError, HTTPError
-        import re
-        from pathlib import Path
-
-        def http_get(url: str) -> str:
-            req = Request(url, headers={"User-Agent": "DNAApp/1.0 (NCBI E-utilities)"})
-            try:
-                with urlopen(req, timeout=30) as r:
-                    return r.read().decode("utf-8", errors="replace")
-            except HTTPError as e:
-                # np. 429 Too Many Requests
-                raise RuntimeError(f"Błąd HTTP {e.code}: {e.reason}") from e
-            except URLError as e:
-                raise RuntimeError(f"Błąd sieci: {e.reason}") from e
-
-        def is_accession_like(s: str) -> bool:
-            # liberalnie: bez spacji, tylko znaki typowe dla accession/UID
-            return bool(re.fullmatch(r"[A-Za-z0-9_.]+", s))
-
-        def parse_esearch_ids(xml_text: str) -> list[str]:
-            return re.findall(r"<Id>(\d+)</Id>", xml_text)
-
-        win = tk.Toplevel(self)
-        win.title("Pobierz FASTA z NCBI")
-        win.transient(self)
-        win.grab_set()
-        win.resizable(False, False)
-
-        frm = ttk.Frame(win, padding=12)
-        frm.pack(fill="both", expand=True)
-
-        ttk.Label(
-            frm,
-            text="Wpisz accession/UID (np. NC_000001.11) lub zapytanie (NCBI ESearch):",
-            font=("Segoe UI", 9, "bold")
-        ).grid(row=0, column=0, columnspan=4, sticky="w")
-
-        entry = ttk.Entry(frm, width=56)
-        entry.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(4, 8))
-        entry.focus_set()
-
-        def show_esearch_info():
-            info = tk.Toplevel(win)
-            info.title("Co to jest ESearch?")
-            info.transient(win)
-            info.grab_set()
-            info.resizable(False, False)
-
-            frame = ttk.Frame(info, padding=16)
-            frame.pack(fill="both", expand=True)
-
-            text = (
-                "ESearch to wyszukiwarka NCBI.\n\n"
-                "Gdy wpiszesz zapytanie tekstowe, aplikacja:\n"
-                "1) użyje ESearch, aby znaleźć pasujące rekordy (UID)\n"
-                "2) następnie użyje EFetch, aby pobrać FASTA\n\n"
-                "Przykłady zapytań:\n"
-                "• TP53[Gene] AND Homo sapiens[Organism]\n"
-                "• BRCA1 AND human\n"
-                "• mitochondrion[Title] AND Mus musculus\n\n"
-                "Jeśli wpiszesz accession (np. NC_000001.11), "
-                "ESearch zostanie pominięty."
-            )
-
-            label = ttk.Label(
-                frame,
-                text=text,
-                justify="left",
-                wraplength=500,
-                font=("Segoe UI", 11)  # <- większa czcionka
-            )
-            label.pack(anchor="w")
-
-            ttk.Button(frame, text="OK", command=info.destroy).pack(pady=(12, 0))
-
-        ttk.Button(frm, text="?", width=3, command=show_esearch_info).grid(
-            row=1, column=3, sticky="w", padx=(6, 0), pady=(4, 8)
-        )
-
-    def download_ncbi(self):
         import tkinter as tk
         from tkinter import ttk, messagebox, filedialog
         from pathlib import Path
@@ -1717,7 +1632,7 @@ class DNAApp(tk.Tk):
         # Etykieta
         ttk.Label(
             frm,
-            text="Wpisz accession/UID (np. NC_000001.11) lub zapytanie (NCBI ESearch):",
+            text="Wpisz accession/UID (jeden lub kilka, oddzielone przecinkami lub spacją):",
             font=("Segoe UI", 10, "bold"),
         ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
@@ -1728,21 +1643,15 @@ class DNAApp(tk.Tk):
         def show_hint():
             messagebox.showinfo(
                 "Podpowiedź",
-                "Przykłady:\n"
+                "Podaj accession/UID, np.:\n"
                 "• NC_001416.1\n"
                 "• NM_000546.6\n"
-                "• Homo sapiens TP53 mRNA\n"
-                "• Enterobacteria phage lambda complete genome",
+                "• MN908947.3\n"
+                "• AY274119.3",
                 parent=win,
             )
 
         ttk.Button(frm, text="?", width=3, command=show_hint).grid(row=1, column=1, padx=(8, 0))
-
-        # retmax
-        ttk.Label(frm, text="Maks. liczba rekordów (retmax):").grid(row=2, column=0, sticky="w", pady=(10, 0))
-        retmax_var = tk.StringVar(value="20")
-        retmax = ttk.Spinbox(frm, from_=1, to=500, textvariable=retmax_var, width=8)
-        retmax.grid(row=2, column=1, sticky="w", pady=(10, 0), padx=(8, 0))
 
         entry.focus_set()
 
@@ -1750,49 +1659,45 @@ class DNAApp(tk.Tk):
         # LOGIKA POBIERANIA
         # ==================================================
         def do_download():
+            # jeśli była analiza, zapytaj czy wyczyścić poprzednie wyniki
+            if getattr(self, "analysis_done", False):
+                ok = messagebox.askyesno(
+                    "Nowa analiza",
+                    "Masz już wykonaną analizę.\n"
+                    "Czy chcesz wczytać nową sekwencję i usunąć poprzednie wyniki oraz motywy?",
+                    parent=win
+                )
+                if not ok:
+                    return
+
+                self.clear_results()
+                self.analysis_done = False
             q = entry.get().strip()
             if not q:
-                messagebox.showwarning("Brak danych", "Wpisz accession/UID albo zapytanie.", parent=win)
+                messagebox.showwarning("Brak danych", "Wpisz accession/UID.", parent=win)
                 return
 
             db_name = "nuccore"
             base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
 
-            # 1) ustal listę ID
             parts = [x for x in re.split(r"[,\s]+", q) if x]
 
+            if not parts or not all(is_accession_like(x) for x in parts):
+                messagebox.showwarning(
+                    "Nieprawidłowe dane",
+                    "Podaj accession number lub UID, bez wyszukiwania tekstowego.",
+                    parent=win,
+                )
+                return
+
             try:
-                if parts and all(is_accession_like(x) for x in parts):
-                    ids = parts
-                else:
-                    params = {
-                        "db": db_name,
-                        "term": q,
-                        "retmax": int(retmax_var.get()),
-                        "retmode": "xml",
-                    }
-                    self.status_var.set("Szukam w NCBI (ESearch)...")
-                    win.update_idletasks()
-                    xml = http_get(base + "esearch.fcgi?" + urlencode(params))
-                    ids = parse_esearch_ids(xml)
-
-                    if not ids:
-                        messagebox.showinfo(
-                            "Brak wyników",
-                            "Nie znaleziono rekordów dla podanego zapytania.",
-                            parent=win,
-                        )
-                        self.update_status()
-                        return
-
-                # 2) EFetch FASTA
                 params = {
                     "db": db_name,
-                    "id": ",".join(ids),
+                    "id": ",".join(parts),
                     "rettype": "fasta",
                     "retmode": "text",
                 }
-                self.status_var.set("Pobieram FASTA (EFetch)...")
+                self.status_var.set("Pobieram FASTA z NCBI...")
                 win.update_idletasks()
                 fasta_text = http_get(base + "efetch.fcgi?" + urlencode(params))
 
@@ -1804,13 +1709,12 @@ class DNAApp(tk.Tk):
             if not fasta_text.strip().startswith(">"):
                 messagebox.showerror(
                     "Błąd",
-                    "NCBI nie zwróciło poprawnego FASTA (sprawdź accession lub zapytanie).",
+                    "NCBI nie zwróciło poprawnego FASTA (sprawdź accession/UID).",
                     parent=win,
                 )
                 self.update_status()
                 return
 
-            # 3) zapisz
             out_path = filedialog.asksaveasfilename(
                 parent=win,
                 title="Zapisz pobrane FASTA",
@@ -1824,17 +1728,27 @@ class DNAApp(tk.Tk):
             Path(out_path).write_text(fasta_text, encoding="utf-8")
             self.log(f"Pobrano FASTA z NCBI: {out_path}")
 
-            # 4) wczytaj do aplikacji
             try:
                 seqs = load_fasta(out_path)
                 self.sequences = seqs
                 self.log(f"Wczytano {len(seqs)} sekwencji")
+
+                self.current_fasta = out_path
+                self.analysis_result = None
+                self.figures.clear()
+
+                self.preview_box.delete("1.0", "end")
+                for i, (k, v) in enumerate(self.sequences.items()):
+                    if i == 20:
+                        self.preview_box.insert("end", "\n... (reszta ukryta)\n")
+                        break
+                    self.preview_box.insert("end", f">{k}\n{v[:200]}...\n\n")
+
             except Exception as e:
                 messagebox.showerror("Błąd FASTA", str(e), parent=win)
                 self.update_status()
                 return
 
-            # 5) przełącz na podgląd
             try:
                 self.tabs.select(self.tab_preview)
             except Exception:
