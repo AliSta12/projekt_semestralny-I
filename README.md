@@ -12,6 +12,8 @@ Program umożliwia:
 - eksport wyników do plików CSV, HTML i PDF
 - pobieranie sekwencji z bazy NCBI (na podstawie accession/UID)
 
+Aplikacja wykorzystuje podejście macierzowe do reprezentacji wyników oraz integrację z biblioteką Matplotlib do wizualizacji danych.
+
 ## Funkcjonalności
 
 - obsługa kodów IUPAC (np. N, R, Y)
@@ -33,9 +35,10 @@ Program umożliwia:
 
 ## Wymagania
 
-Python 3.x
+- Python 3.10+
 
 Biblioteki:
+
 ```
 numpy
 matplotlib
@@ -45,7 +48,7 @@ requests
 ## Instalacja
 
 ```bash
-pip install numpy matplotlib requests
+pip install -r requirements.txt
 ```
 
 ## Uruchomienie
@@ -66,4 +69,4 @@ python main.py
 
 Alicja Stachura-Matyjewicz  
 
-Projekt wykonany w ramach projektu semestralnego.
+Wykonanie w ramach projektu semestralnego na kierunku "Analitych danych biologiczno-medycznych", Uniwersytet Koźmińskiego.
