@@ -2,25 +2,32 @@
 
 Aplikacja w Pythonie do analizy motywów nukleotydowych w sekwencjach DNA z obsługą kodów IUPAC.
 
+---
+
 ## Opis projektu
 
 Program umożliwia:
-- wczytywanie sekwencji DNA w formacie FASTA
-- wyszukiwanie motywów nukleotydowych (z obsługą IUPAC)
-- analizę liczby wystąpień motywów
-- wizualizację wyników (heatmapa, wykresy słupkowe)
-- eksport wyników do plików CSV, HTML i PDF
-- pobieranie sekwencji z bazy NCBI (na podstawie accession/UID)
+
+- wczytywanie sekwencji DNA w formacie FASTA  
+- wyszukiwanie motywów nukleotydowych (z obsługą IUPAC)  
+- analizę liczby wystąpień motywów  
+- wizualizację wyników (heatmapa, wykresy słupkowe)  
+- eksport wyników do plików CSV, HTML i PDF  
+- pobieranie sekwencji z bazy NCBI (na podstawie accession/UID)  
 
 Aplikacja wykorzystuje podejście macierzowe do reprezentacji wyników oraz integrację z biblioteką Matplotlib do wizualizacji danych.
 
+---
+
 ## Funkcjonalności
 
-- obsługa kodów IUPAC (np. N, R, Y)
-- liczenie dopasowań z nakładaniem (overlapping)
-- normalizacja wyników (na 1000 nt)
-- interfejs graficzny (Tkinter)
-- eksport danych i wykresów
+- obsługa kodów IUPAC (np. N, R, Y)  
+- liczenie dopasowań z nakładaniem (overlapping)  
+- normalizacja wyników (na 1000 nt)  
+- interfejs graficzny (Tkinter)  
+- eksport danych i wykresów  
+
+---
 
 ## Struktura projektu
 
@@ -32,6 +39,8 @@ Aplikacja wykorzystuje podejście macierzowe do reprezentacji wyników oraz inte
 - `export_manager.py` – eksport wyników  
 - `export_tab.py` – GUI eksportu  
 - `ncbi_client.py` – pobieranie danych z NCBI  
+
+---
 
 ## Wymagania
 
@@ -45,17 +54,23 @@ matplotlib
 requests
 ```
 
+---
+
 ## Instalacja
 
 ```bash
 pip install -r requirements.txt
 ```
 
+---
+
 ## Uruchomienie
 
 ```bash
 python main.py
 ```
+
+---
 
 ## Przykładowe użycie
 
@@ -65,8 +80,12 @@ python main.py
 4. Przeglądaj wyniki i wizualizacje  
 5. Eksportuj dane do pliku  
 
+---
+
 ## Autor
 
-Alicja Stachura-Matyjewicz  
+**Alicja Stachura-Matyjewicz**
 
-Wykonanie w ramach projektu semestralnego na kierunku "Analitych danych biologiczno-medycznych", Uniwersytet Koźmińskiego.
+Projekt wykonany w ramach projektu semestralnego  
+na kierunku *Analityk danych biologiczno-medycznych*,  
+Uniwersytet Koźmińskiego.
