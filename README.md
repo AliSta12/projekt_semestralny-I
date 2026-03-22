@@ -2,23 +2,32 @@
 
 Aplikacja w Pythonie do analizy motywów nukleotydowych w sekwencjach DNA z obsługą kodów IUPAC.
 
+---
+
 ## Opis projektu
 
 Program umożliwia:
-- wczytywanie sekwencji DNA w formacie FASTA
-- wyszukiwanie motywów nukleotydowych (z obsługą IUPAC)
-- analizę liczby wystąpień motywów
-- wizualizację wyników (heatmapa, wykresy słupkowe)
-- eksport wyników do plików CSV, HTML i PDF
-- pobieranie sekwencji z bazy NCBI (na podstawie accession/UID)
+
+- wczytywanie sekwencji DNA w formacie FASTA  
+- wyszukiwanie motywów nukleotydowych (z obsługą IUPAC)  
+- analizę liczby wystąpień motywów  
+- wizualizację wyników (heatmapa, wykresy słupkowe)  
+- eksport wyników do plików CSV, HTML i PDF  
+- pobieranie sekwencji z bazy NCBI (na podstawie accession/UID)  
+
+Aplikacja wykorzystuje podejście macierzowe do reprezentacji wyników oraz integrację z biblioteką Matplotlib do wizualizacji danych.
+
+---
 
 ## Funkcjonalności
 
-- obsługa kodów IUPAC (np. N, R, Y)
-- liczenie dopasowań z nakładaniem (overlapping)
-- normalizacja wyników (na 1000 nt)
-- interfejs graficzny (Tkinter)
-- eksport danych i wykresów
+- obsługa kodów IUPAC (np. N, R, Y)  
+- liczenie dopasowań z nakładaniem (overlapping)  
+- normalizacja wyników (na 1000 nt)  
+- interfejs graficzny (Tkinter)  
+- eksport danych i wykresów  
+
+---
 
 ## Struktura projektu
 
@@ -31,28 +40,37 @@ Program umożliwia:
 - `export_tab.py` – GUI eksportu  
 - `ncbi_client.py` – pobieranie danych z NCBI  
 
+---
+
 ## Wymagania
 
-Python 3.x
+- Python 3.10+
 
 Biblioteki:
+
 ```
 numpy
 matplotlib
 requests
 ```
 
+---
+
 ## Instalacja
 
 ```bash
-pip install numpy matplotlib requests
+pip install -r requirements.txt
 ```
+
+---
 
 ## Uruchomienie
 
 ```bash
 python main.py
 ```
+
+---
 
 ## Przykładowe użycie
 
@@ -62,8 +80,12 @@ python main.py
 4. Przeglądaj wyniki i wizualizacje  
 5. Eksportuj dane do pliku  
 
+---
+
 ## Autor
 
-Alicja Stachura-Matyjewicz  
+**Alicja Stachura-Matyjewicz**
 
-Projekt wykonany w ramach projektu semestralnego.
+Projekt wykonany w ramach projektu semestralnego  
+na kierunku *Analityk danych biologiczno-medycznych*,  
+Uniwersytet Koźmińskiego.
